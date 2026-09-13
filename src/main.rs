@@ -7,7 +7,7 @@ use ctaphid_types::Command;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{filter::LevelFilter, EnvFilter};
 use webauthn_authenticator_rs::{
-    cable::connect_cable_authenticator,
+    cable::connect_cable_tunnel,
     types::CableRequestType,
     ui::Cli,
 };
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
             eprintln!("   sudo ./target/debug/cable-uhid-bridge");
             eprintln!("\n👉 Or configure a udev rule for your user:");
             eprintln!("   echo 'KERNEL==\"uhid\", TAG+=\"uaccess\"' | sudo tee /etc/udev/rules.d/70-uhid.rules");
-            eprintln!("   sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uhid\n");
+            eprintln!("   sudo modprobe uhid && sudo udevadm trigger -s misc -a name=uhid\n");
             return Err(e);
         }
     };
@@ -74,7 +74,6 @@ async fn main() -> Result<()> {
                         }
 
                         let ctap_cmd = data[0];
-                        let _ctap_payload = &data[1..];
 
                         match ctap_cmd {
                             CTAP_CMD_GET_INFO => {
@@ -90,11 +89,24 @@ async fn main() -> Result<()> {
                                 println!("\n🔑 Received CTAP2 authenticatorGetAssertion (0x02) request from browser!");
                                 println!("   Triggering caBLE v2 (Hybrid Transport) session with your phone...\n");
 
-                                match connect_cable_authenticator(CableRequestType::GetAssertion, &ui).await {
-                                    Ok(_mobile_auth) => {
+                                match connect_cable_tunnel(CableRequestType::GetAssertion, &ui).await {
+                                    Ok(mut tunnel) => {
                                         println!("\n🎉 Mobile authenticator connected via caBLE v2!");
-                                        info!("Relaying GetAssertion request to mobile authenticator...");
-                                        let _ = token.send_cbor_status(channel, CTAP2_OK);
+                                        info!("Relaying GetAssertion request ({} bytes) to mobile authenticator...", data.len());
+                                        match tunnel.transmit_cbor(&data, &ui).await {
+                                            Ok(resp) => {
+                                                info!("Received signed CTAP assertion ({} bytes) from phone!", resp.len());
+                                                if let Err(e) = token.send_response(channel, Command::Cbor, resp) {
+                                                    error!("Failed to send assertion back to browser: {:?}", e);
+                                                } else {
+                                                    println!("\n✅ Successfully returned signed passkey assertion to browser!\n");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error executing GetAssertion on phone: {:?}", e);
+                                                let _ = token.send_cbor_status(channel, CTAP2_ERR_OPERATION_DENIED);
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         error!("caBLE session failed: {:?}", e);
@@ -106,10 +118,24 @@ async fn main() -> Result<()> {
                                 println!("\n📝 Received CTAP2 authenticatorMakeCredential (0x01) request from browser!");
                                 println!("   Triggering caBLE v2 (Hybrid Transport) registration with your phone...\n");
 
-                                match connect_cable_authenticator(CableRequestType::MakeCredential, &ui).await {
-                                    Ok(_mobile_auth) => {
+                                match connect_cable_tunnel(CableRequestType::MakeCredential, &ui).await {
+                                    Ok(mut tunnel) => {
                                         println!("\n🎉 Mobile authenticator connected via caBLE v2!");
-                                        let _ = token.send_cbor_status(channel, CTAP2_OK);
+                                        info!("Relaying MakeCredential request ({} bytes) to mobile authenticator...", data.len());
+                                        match tunnel.transmit_cbor(&data, &ui).await {
+                                            Ok(resp) => {
+                                                info!("Received created credential ({} bytes) from phone!", resp.len());
+                                                if let Err(e) = token.send_response(channel, Command::Cbor, resp) {
+                                                    error!("Failed to send credential back to browser: {:?}", e);
+                                                } else {
+                                                    println!("\n✅ Successfully returned new passkey credential to browser!\n");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error executing MakeCredential on phone: {:?}", e);
+                                                let _ = token.send_cbor_status(channel, CTAP2_ERR_OPERATION_DENIED);
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         error!("caBLE session failed: {:?}", e);
