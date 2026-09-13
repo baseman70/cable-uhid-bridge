@@ -93,3 +93,17 @@ Output will show your virtual token registered as a FIDO2 device!
 2. Click **"Authenticate"** or **"Sign in with a passkey"**.
 3. Firefox will communicate with `/dev/uhid`, which automatically prompts the QR code in your terminal.
 4. Scan the QR code with your iPhone or Android camera, verify with Face ID / Fingerprint, and complete the sign-in!
+
+---
+
+## Roadmap & Upcoming Milestones
+
+- [ ] **Option A: Desktop UI / Popup for QR Code (Wayland / Hyprland)**
+  - Replace terminal ASCII QR output with an automatic desktop modal popup (via GTK4, Wayland layer-shell, or Slint).
+  - Automatically pops up on WebAuthn assertion requests and dismisses upon phone BLE beacon proximity detection.
+- [ ] **Option B: Systemd User Service & Packaging**
+  - Provide a systemd user service (`cable-uhid-bridge.service`) to run unobtrusively in the background on login.
+  - Create an Arch Linux / AUR `PKGBUILD` for one-command installation with udev rules and module autoloading.
+- [ ] **Upstream Community Collaboration**
+  - Track RFC discussion on [`bjn7/passkeyd#21`](https://github.com/bjn7/passkeyd/issues/21) for potential integration into `passkeyd`.
+
