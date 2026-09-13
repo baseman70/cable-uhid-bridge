@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
                                         match tunnel.transmit_cbor(&data, &ui).await {
                                             Ok(resp) => {
                                                 info!("Received signed CTAP assertion ({} bytes) from phone!", resp.len());
-                                                if let Err(e) = token.send_response(channel, Command::Cbor, resp) {
+                                                if let Err(e) = token.send_cbor_response(channel, CTAP2_OK, &resp) {
                                                     error!("Failed to send assertion back to browser: {:?}", e);
                                                 } else {
                                                     println!("\n✅ Successfully returned signed passkey assertion to browser!\n");
@@ -125,7 +125,7 @@ async fn main() -> Result<()> {
                                         match tunnel.transmit_cbor(&data, &ui).await {
                                             Ok(resp) => {
                                                 info!("Received created credential ({} bytes) from phone!", resp.len());
-                                                if let Err(e) = token.send_response(channel, Command::Cbor, resp) {
+                                                if let Err(e) = token.send_cbor_response(channel, CTAP2_OK, &resp) {
                                                     error!("Failed to send credential back to browser: {:?}", e);
                                                 } else {
                                                     println!("\n✅ Successfully returned new passkey credential to browser!\n");
