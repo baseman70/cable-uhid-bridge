@@ -39,6 +39,12 @@ Firefox and Chromium on Linux lack an OS-level platform authenticator with Hybri
 
 ---
 
+## Verification Status
+> **Verified Working on GitHub!**  
+> Successfully authenticated to **GitHub (`github.com`) in Firefox on Linux** using an iPhone passkey (iCloud Keychain / caBLE v2) via QR code scan and Face ID.
+
+---
+
 ## Permissions Setup
 
 Accessing the Linux kernel user-space HID interface (`/dev/uhid`) requires appropriate permissions.
@@ -47,8 +53,13 @@ Accessing the Linux kernel user-space HID interface (`/dev/uhid`) requires appro
 Allow any logged-in desktop user to access `/dev/uhid` via systemd ACLs:
 
 ```bash
+# Ensure uhid module loads at boot
+echo 'uhid' | sudo tee /etc/modules-load.d/uhid.conf
+sudo modprobe uhid
+
+# Grant logged-in desktop user access via ACL
 echo 'KERNEL=="uhid", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-uhid.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uhid
+sudo udevadm control --reload-rules && sudo udevadm trigger -s misc -a name=uhid
 ```
 
 ### Option B: Run with `sudo`
