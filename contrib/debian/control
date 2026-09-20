@@ -1,0 +1,11 @@
+Package: cable-uhid-bridge
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libc6, libdbus-1-3, libxkbcommon0
+Maintainer: Chris Sommers <chris.sommers@icloud.com>
+Description: Linux virtual USB FIDO2 token bridge for mobile passkeys (caBLE v2)
+ Emulates a physical FIDO2 USB token over /dev/uhid with an automatic floating
+ Wayland/X11 modal and Bluetooth LE proximity verification for Android and iOS passkeys.
+Homepage: https://github.com/baseman70/cable-uhid-bridge

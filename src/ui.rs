@@ -51,16 +51,11 @@ impl CableModalApp {
             }
         }
 
-        let color_image = egui::ColorImage::from_rgba_unmultiplied(
-            [total_size, total_size],
-            &rgba,
-        );
+        let color_image = egui::ColorImage::from_rgba_unmultiplied([total_size, total_size], &rgba);
 
-        let qr_texture = cc.egui_ctx.load_texture(
-            "cable_qr_code",
-            color_image,
-            egui::TextureOptions::NEAREST,
-        );
+        let qr_texture =
+            cc.egui_ctx
+                .load_texture("cable_qr_code", color_image, egui::TextureOptions::NEAREST);
 
         // Configure visuals for clean dark theme
         let mut visuals = egui::Visuals::dark();
@@ -107,7 +102,8 @@ impl eframe::App for CableModalApp {
         }
 
         // Request repaint for smooth spinner and timer
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(50));
 
         ui.vertical_centered(|ui| {
             ui.add_space(16.0);
@@ -153,10 +149,7 @@ impl eframe::App for CableModalApp {
                             egui::Layout::top_down(egui::Align::Center),
                             |ui| {
                                 ui.add_space(40.0);
-                                ui.label(
-                                    egui::RichText::new("📱")
-                                        .size(44.0),
-                                );
+                                ui.label(egui::RichText::new("📱").size(44.0));
                                 ui.add_space(8.0);
                                 ui.label(
                                     egui::RichText::new("Phone Connected")
@@ -271,5 +264,6 @@ pub fn run_ui(rp_id: String, url: String) -> Result<()> {
         "Passkey Authentication",
         native_options,
         Box::new(move |cc| Ok(Box::new(CableModalApp::new(cc, rp_id, url, cmd_rx)))),
-    ).map_err(|e| anyhow::anyhow!("Failed to run UI: {:?}", e))
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to run UI: {:?}", e))
 }

@@ -162,8 +162,13 @@ impl BridgeEngine {
                         return EngineCborAction::SendStatus(CTAP2_ERR_NO_CREDENTIALS);
                     } else {
                         // Silent probe with allowList: resolve silently with synthetic assertion
-                        if let Some((cred_descriptor, _cred_id)) = extract_first_allow_list_credential(data) {
-                            let resp = build_silent_assertion_response(&assertion_req.rp_id, cred_descriptor);
+                        if let Some((cred_descriptor, _cred_id)) =
+                            extract_first_allow_list_credential(data)
+                        {
+                            let resp = build_silent_assertion_response(
+                                &assertion_req.rp_id,
+                                cred_descriptor,
+                            );
                             return EngineCborAction::SendResponse(resp);
                         }
                     }
@@ -346,7 +351,8 @@ mod tests {
                 assert!(entries.iter().any(|(k, _)| *k == Value::Integer(4.into()))); // maxMsgSize
                 assert!(entries.iter().any(|(k, _)| *k == Value::Integer(7.into()))); // maxCredentialCountInList
                 assert!(entries.iter().any(|(k, _)| *k == Value::Integer(8.into()))); // maxCredentialIdLength
-                assert!(entries.iter().any(|(k, _)| *k == Value::Integer(10.into()))); // algorithms
+                assert!(entries.iter().any(|(k, _)| *k == Value::Integer(10.into())));
+            // algorithms
             } else {
                 panic!("Expected CBOR Map");
             }
@@ -366,7 +372,10 @@ mod tests {
             TransactionResult::UserCancelled,
         );
 
-        assert_eq!(outcome, Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL)));
+        assert_eq!(
+            outcome,
+            Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL))
+        );
         assert!(engine.is_in_cooldown());
     }
 
@@ -379,7 +388,10 @@ mod tests {
             TransactionResult::HostCancelled,
         );
 
-        assert_eq!(outcome, Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL)));
+        assert_eq!(
+            outcome,
+            Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL))
+        );
         assert!(engine.is_in_cooldown());
     }
 
@@ -405,7 +417,10 @@ mod tests {
             TransactionResult::Failed("Connection dropped".into()),
         );
 
-        assert_eq!(outcome, Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL)));
+        assert_eq!(
+            outcome,
+            Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL))
+        );
         assert!(engine.is_in_cooldown());
     }
 
@@ -419,7 +434,10 @@ mod tests {
         let action = engine.handle_cbor_request(&req);
 
         // MUST be KEEPALIVE_CANCEL (0x2D) to stop browser retry loop
-        assert_eq!(action, EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL));
+        assert_eq!(
+            action,
+            EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL)
+        );
     }
 
     #[test]
@@ -431,7 +449,10 @@ mod tests {
         let req = make_test_make_credential_cbor("webauthn.io");
         let action = engine.handle_cbor_request(&req);
 
-        assert_eq!(action, EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL));
+        assert_eq!(
+            action,
+            EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL)
+        );
     }
 
     #[test]
@@ -442,7 +463,10 @@ mod tests {
         let req = make_test_get_assertion_cbor("webauthn.io", true, vec![]);
         for _ in 0..10 {
             let action = engine.handle_cbor_request(&req);
-            assert_eq!(action, EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL));
+            assert_eq!(
+                action,
+                EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL)
+            );
         }
     }
 
@@ -457,11 +481,16 @@ mod tests {
         let action = engine.handle_cbor_request(&req);
 
         match action {
-            EngineCborAction::StartCableTransaction { req_type, rp_id, .. } => {
+            EngineCborAction::StartCableTransaction {
+                req_type, rp_id, ..
+            } => {
                 assert_eq!(req_type, CableRequestType::GetAssertion);
                 assert_eq!(rp_id, "webauthn.io");
             }
-            other => panic!("Expected StartCableTransaction after cooldown expiry, got {:?}", other),
+            other => panic!(
+                "Expected StartCableTransaction after cooldown expiry, got {:?}",
+                other
+            ),
         }
     }
 
@@ -471,7 +500,10 @@ mod tests {
         let req = make_test_get_assertion_cbor("webauthn.io", false, vec![]);
         let action = engine.handle_cbor_request(&req);
 
-        assert_eq!(action, EngineCborAction::SendStatus(CTAP2_ERR_NO_CREDENTIALS));
+        assert_eq!(
+            action,
+            EngineCborAction::SendStatus(CTAP2_ERR_NO_CREDENTIALS)
+        );
     }
 
     #[test]
@@ -517,7 +549,9 @@ mod tests {
         let action = engine.handle_cbor_request(&req);
 
         match action {
-            EngineCborAction::StartCableTransaction { req_type, rp_id, .. } => {
+            EngineCborAction::StartCableTransaction {
+                req_type, rp_id, ..
+            } => {
                 assert_eq!(req_type, CableRequestType::DiscoverableMakeCredential);
                 assert_eq!(rp_id, "webauthn.io");
             }
@@ -532,7 +566,9 @@ mod tests {
         let action = engine.handle_cbor_request(&req);
 
         match action {
-            EngineCborAction::StartCableTransaction { req_type, rp_id, .. } => {
+            EngineCborAction::StartCableTransaction {
+                req_type, rp_id, ..
+            } => {
                 assert_eq!(req_type, CableRequestType::GetAssertion);
                 assert_eq!(rp_id, "webauthn.io");
             }
@@ -552,7 +588,10 @@ mod tests {
             "webauthn.io",
             TransactionResult::Success(assertion_resp.clone()),
         );
-        assert_eq!(outcome, Some(EngineCborAction::SendResponse(assertion_resp.clone())));
+        assert_eq!(
+            outcome,
+            Some(EngineCborAction::SendResponse(assertion_resp.clone()))
+        );
         assert!(engine.assertion_cache.is_some());
 
         // Stage 2: Browser immediately sends targeted GetAssertion with matching credential
@@ -583,7 +622,10 @@ mod tests {
         // Must not match cache; should start a new transaction
         match action {
             EngineCborAction::StartCableTransaction { .. } => {}
-            other => panic!("Expected StartCableTransaction on credential miss, got {:?}", other),
+            other => panic!(
+                "Expected StartCableTransaction on credential miss, got {:?}",
+                other
+            ),
         }
     }
 
@@ -633,7 +675,10 @@ mod tests {
 
         match action {
             EngineCborAction::StartCableTransaction { .. } => {}
-            other => panic!("Expected StartCableTransaction on expired cache, got {:?}", other),
+            other => panic!(
+                "Expected StartCableTransaction on expired cache, got {:?}",
+                other
+            ),
         }
     }
 
@@ -648,7 +693,10 @@ mod tests {
     fn test_unsupported_ctap_command() {
         let mut engine = BridgeEngine::new();
         let action = engine.handle_cbor_request(&[0x77, 0x00]);
-        assert_eq!(action, EngineCborAction::SendStatus(CTAP2_ERR_UNSUPPORTED_OPTION));
+        assert_eq!(
+            action,
+            EngineCborAction::SendStatus(CTAP2_ERR_UNSUPPORTED_OPTION)
+        );
     }
 
     #[test]
@@ -677,13 +725,19 @@ mod tests {
 
         // Stage 1: Request arrives, setting pending_client_data_hash
         let mut map1 = Vec::new();
-        map1.push((Value::Integer(1.into()), Value::Text("webauthn.io".to_string())));
+        map1.push((
+            Value::Integer(1.into()),
+            Value::Text("webauthn.io".to_string()),
+        ));
         map1.push((Value::Integer(2.into()), Value::Bytes(hash.clone())));
         let mut cbor1 = vec![CTAP_CMD_GET_ASSERTION];
         ciborium::ser::into_writer(&Value::Map(map1), &mut cbor1).unwrap();
 
         let action1 = engine.handle_cbor_request(&cbor1);
-        assert!(matches!(action1, EngineCborAction::StartCableTransaction { .. }));
+        assert!(matches!(
+            action1,
+            EngineCborAction::StartCableTransaction { .. }
+        ));
 
         // Complete transaction 1: populates cache with pending_client_data_hash
         let outcome = engine.handle_transaction_outcome(
@@ -691,17 +745,26 @@ mod tests {
             "webauthn.io",
             TransactionResult::Success(assertion_resp.clone()),
         );
-        assert_eq!(outcome, Some(EngineCborAction::SendResponse(assertion_resp.clone())));
+        assert_eq!(
+            outcome,
+            Some(EngineCborAction::SendResponse(assertion_resp.clone()))
+        );
         assert!(engine.assertion_cache.is_some());
 
         // Stage 2: Follow-up with identical clientDataHash matches and replays!
         let mut map2 = Vec::new();
-        map2.push((Value::Integer(1.into()), Value::Text("webauthn.io".to_string())));
+        map2.push((
+            Value::Integer(1.into()),
+            Value::Text("webauthn.io".to_string()),
+        ));
         map2.push((Value::Integer(2.into()), Value::Bytes(hash)));
-        map2.push((Value::Integer(3.into()), Value::Array(vec![Value::Map(vec![
-            (Value::Text("id".into()), Value::Bytes(cred_id)),
-            (Value::Text("type".into()), Value::Text("public-key".into())),
-        ])])));
+        map2.push((
+            Value::Integer(3.into()),
+            Value::Array(vec![Value::Map(vec![
+                (Value::Text("id".into()), Value::Bytes(cred_id)),
+                (Value::Text("type".into()), Value::Text("public-key".into())),
+            ])]),
+        ));
         let mut cbor2 = vec![CTAP_CMD_GET_ASSERTION];
         ciborium::ser::into_writer(&Value::Map(map2.clone()), &mut cbor2).unwrap();
 
@@ -711,7 +774,10 @@ mod tests {
         // Cache must be consumed! A subsequent request cannot replay the same cache again.
         assert!(engine.assertion_cache.is_none());
         let action3 = engine.handle_cbor_request(&cbor2);
-        assert!(matches!(action3, EngineCborAction::StartCableTransaction { .. }));
+        assert!(matches!(
+            action3,
+            EngineCborAction::StartCableTransaction { .. }
+        ));
     }
 
     #[test]
@@ -724,7 +790,10 @@ mod tests {
 
         // Stage 1 with hash1
         let mut map1 = Vec::new();
-        map1.push((Value::Integer(1.into()), Value::Text("webauthn.io".to_string())));
+        map1.push((
+            Value::Integer(1.into()),
+            Value::Text("webauthn.io".to_string()),
+        ));
         map1.push((Value::Integer(2.into()), Value::Bytes(hash1)));
         let mut cbor1 = vec![CTAP_CMD_GET_ASSERTION];
         ciborium::ser::into_writer(&Value::Map(map1), &mut cbor1).unwrap();
@@ -738,17 +807,25 @@ mod tests {
 
         // Stage 2 with completely different hash2 must NOT match cache
         let mut map2 = Vec::new();
-        map2.push((Value::Integer(1.into()), Value::Text("webauthn.io".to_string())));
+        map2.push((
+            Value::Integer(1.into()),
+            Value::Text("webauthn.io".to_string()),
+        ));
         map2.push((Value::Integer(2.into()), Value::Bytes(hash2)));
-        map2.push((Value::Integer(3.into()), Value::Array(vec![Value::Map(vec![
-            (Value::Text("id".into()), Value::Bytes(cred_id)),
-            (Value::Text("type".into()), Value::Text("public-key".into())),
-        ])])));
+        map2.push((
+            Value::Integer(3.into()),
+            Value::Array(vec![Value::Map(vec![
+                (Value::Text("id".into()), Value::Bytes(cred_id)),
+                (Value::Text("type".into()), Value::Text("public-key".into())),
+            ])]),
+        ));
         let mut cbor2 = vec![CTAP_CMD_GET_ASSERTION];
         ciborium::ser::into_writer(&Value::Map(map2), &mut cbor2).unwrap();
 
         let action2 = engine.handle_cbor_request(&cbor2);
-        assert!(matches!(action2, EngineCborAction::StartCableTransaction { .. }));
+        assert!(matches!(
+            action2,
+            EngineCborAction::StartCableTransaction { .. }
+        ));
     }
 }
-

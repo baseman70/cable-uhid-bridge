@@ -76,7 +76,10 @@ async fn main() -> Result<()> {
         match token.read_event() {
             Ok(Some((channel, command, data))) => match command {
                 Command::Init => {
-                    info!("Handling CTAPHID_INIT from browser on channel {:?}", channel);
+                    info!(
+                        "Handling CTAPHID_INIT from browser on channel {:?}",
+                        channel
+                    );
                     if let Err(e) = token.handle_init(channel, &data) {
                         error!("Error handling CTAPHID_INIT: {:?}", e);
                     }
@@ -89,32 +92,30 @@ async fn main() -> Result<()> {
                     info!("Handling CTAPHID_WINK");
                     let _ = token.send_single_packet(channel, Command::Wink, &[]);
                 }
-                Command::Cbor => {
-                    match engine.handle_cbor_request(&data) {
-                        EngineCborAction::SendStatus(status) => {
-                            let _ = token.send_cbor_status(channel, status);
-                        }
-                        EngineCborAction::SendResponse(resp) => {
-                            let _ = token.send_cbor_response(channel, CTAP2_OK, &resp);
-                        }
-                        EngineCborAction::StartCableTransaction {
-                            req_type,
-                            rp_id,
-                            cable_payload,
-                        } => {
-                            handle_cable_transaction(
-                                &mut token,
-                                &mut engine,
-                                channel,
-                                &cable_payload,
-                                req_type,
-                                &rp_id,
-                            )
-                            .await;
-                        }
-                        EngineCborAction::Ignore => {}
+                Command::Cbor => match engine.handle_cbor_request(&data) {
+                    EngineCborAction::SendStatus(status) => {
+                        let _ = token.send_cbor_status(channel, status);
                     }
-                }
+                    EngineCborAction::SendResponse(resp) => {
+                        let _ = token.send_cbor_response(channel, CTAP2_OK, &resp);
+                    }
+                    EngineCborAction::StartCableTransaction {
+                        req_type,
+                        rp_id,
+                        cable_payload,
+                    } => {
+                        handle_cable_transaction(
+                            &mut token,
+                            &mut engine,
+                            channel,
+                            &cable_payload,
+                            req_type,
+                            &rp_id,
+                        )
+                        .await;
+                    }
+                    EngineCborAction::Ignore => {}
+                },
                 other_cmd => {
                     debug!("Unsupported CTAPHID command: {:?}", other_cmd);
                     let _ = token.send_error(channel, ctaphid_types::DeviceError::InvalidCommand);
@@ -143,15 +144,28 @@ async fn handle_cable_transaction(
         || req_type == CableRequestType::MakeCredential;
 
     if is_make_cred {
-        println!("\n📝 Received CTAP2 authenticatorMakeCredential request for: {}", rp_id);
-        println!("   Launching caBLE v2 (Hybrid Transport) registration modal with your phone...\n");
+        println!(
+            "\n📝 Received CTAP2 authenticatorMakeCredential request for: {}",
+            rp_id
+        );
+        println!(
+            "   Launching caBLE v2 (Hybrid Transport) registration modal with your phone...\n"
+        );
     } else {
-        println!("\n🔑 Received CTAP2 authenticatorGetAssertion request for: {}", rp_id);
+        println!(
+            "\n🔑 Received CTAP2 authenticatorGetAssertion request for: {}",
+            rp_id
+        );
         let assertion_req = parse_assertion_request(data);
         if assertion_req.allow_list.is_empty() {
-            println!("   allowList is empty: searching for discoverable passkeys (resident keys)...");
+            println!(
+                "   allowList is empty: searching for discoverable passkeys (resident keys)..."
+            );
         } else {
-            println!("   Searching allowList ({} credential(s) requested):", assertion_req.allow_list.len());
+            println!(
+                "   Searching allowList ({} credential(s) requested):",
+                assertion_req.allow_list.len()
+            );
             for (idx, cred_id) in assertion_req.allow_list.iter().enumerate() {
                 println!("     [{}] {}", idx + 1, hex::encode(cred_id));
             }
@@ -176,7 +190,9 @@ async fn handle_cable_transaction(
             match cable_task.await {
                 Ok(Ok(resp)) => break TransactionResult::Success(resp),
                 Ok(Err(e)) => break TransactionResult::Failed(e.to_string()),
-                Err(e) => break TransactionResult::Failed(format!("caBLE worker task panicked: {:?}", e)),
+                Err(e) => {
+                    break TransactionResult::Failed(format!("caBLE worker task panicked: {:?}", e))
+                }
             }
         }
 
@@ -197,14 +213,20 @@ async fn handle_cable_transaction(
             match in_cmd {
                 Command::Cancel => {
                     if in_ch == channel {
-                        info!("Host cancelled WebAuthn session on channel {:?} via CTAPHID_CANCEL", in_ch);
+                        info!(
+                            "Host cancelled WebAuthn session on channel {:?} via CTAPHID_CANCEL",
+                            in_ch
+                        );
                         cable_task.abort();
                         break TransactionResult::HostCancelled;
                     }
                 }
                 Command::Init => {
                     if in_ch == channel {
-                        info!("Host sent CTAPHID_INIT on active channel {:?}; resetting session", in_ch);
+                        info!(
+                            "Host sent CTAPHID_INIT on active channel {:?}; resetting session",
+                            in_ch
+                        );
                         let _ = token.handle_init(in_ch, &in_data);
                         cable_task.abort();
                         break TransactionResult::HostReset;
@@ -233,7 +255,10 @@ async fn handle_cable_transaction(
             EngineCborAction::SendResponse(resp) => {
                 bridge_ui.notify_done();
                 if is_make_cred {
-                    info!("Received created credential ({} bytes) from phone!", resp.len());
+                    info!(
+                        "Received created credential ({} bytes) from phone!",
+                        resp.len()
+                    );
                     let cred_id_hex = extract_make_credential_id(&resp)
                         .map(|id| hex::encode(&id))
                         .unwrap_or_else(|| "unknown".to_string());
@@ -241,7 +266,10 @@ async fn handle_cable_transaction(
                     println!("   Created Credential ID: {}", cred_id_hex);
                     println!("   Relying Party: {}\n", rp_id);
                 } else {
-                    info!("Received signed CTAP assertion ({} bytes) from phone!", resp.len());
+                    info!(
+                        "Received signed CTAP assertion ({} bytes) from phone!",
+                        resp.len()
+                    );
                     let cred_id_hex = extract_assertion_credential_id(&resp)
                         .map(|id| hex::encode(&id))
                         .unwrap_or_else(|| "unspecified (discoverable passkey)".to_string());
@@ -268,4 +296,3 @@ async fn handle_cable_transaction(
         bridge_ui.close();
     }
 }
-

@@ -1,0 +1,25 @@
+# Maintainer: Chris Sommers <chris.sommers@icloud.com>
+pkgname=cable-uhid-bridge-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Linux virtual USB FIDO2 token bridge for mobile passkeys via caBLE v2 (QR code) (precompiled binary)"
+arch=('x86_64')
+url="https://github.com/baseman70/cable-uhid-bridge"
+license=('MIT' 'Apache-2.0')
+depends=('dbus' 'libxkbcommon')
+provides=('cable-uhid-bridge')
+conflicts=('cable-uhid-bridge')
+source=("https://github.com/baseman70/cable-uhid-bridge/releases/download/v${pkgver}/cable-uhid-bridge-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+    cd "$srcdir"
+
+    install -Dm755 "cable-uhid-bridge" "$pkgdir/usr/bin/cable-uhid-bridge"
+    install -Dm644 "contrib/cable-uhid-bridge.service" "$pkgdir/usr/lib/systemd/user/cable-uhid-bridge.service"
+    install -Dm644 "contrib/70-uhid.rules" "$pkgdir/usr/lib/udev/rules.d/70-uhid.rules"
+    install -Dm644 "contrib/uhid.conf" "$pkgdir/usr/lib/modules-load.d/uhid.conf"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+    install -Dm644 "LICENSE-APACHE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

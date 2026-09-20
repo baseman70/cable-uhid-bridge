@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Ensure uhid kernel module is loaded
+        modprobe uhid >/dev/null 2>&1 || true
+
+        # Reload udev rules and trigger device ACLs
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+            udevadm trigger -s misc -a name=uhid || true
+        fi
+        ;;
+esac
+
+exit 0

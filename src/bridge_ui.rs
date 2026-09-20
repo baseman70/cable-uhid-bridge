@@ -193,7 +193,9 @@ impl UiCallback for BridgeUi {
         let msg = match state {
             CableState::ConnectingToTunnelServer => "Connecting to secure relay...",
             CableState::Handshaking => "Establishing encrypted tunnel...",
-            CableState::WaitingForAuthenticatorResponse => "Phone connected! Waiting for Face ID / Touch ID...",
+            CableState::WaitingForAuthenticatorResponse => {
+                "Phone connected! Waiting for Face ID / Touch ID..."
+            }
             CableState::Processing => "Processing passkey on phone...",
             _ => "Scan QR code with phone camera",
         };
@@ -265,4 +267,3 @@ mod tests {
         assert_eq!(resolved, fake);
     }
 }
-

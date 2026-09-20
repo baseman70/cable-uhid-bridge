@@ -118,11 +118,20 @@ pub fn extract_first_allow_list_credential(raw_cbor: &[u8]) -> Option<(Value, Ve
                                         if k_str == "id" {
                                             if let Value::Bytes(ref id_bytes) = dv {
                                                 let mut cred_map = vec![
-                                                    (Value::Text("id".into()), Value::Bytes(id_bytes.clone())),
-                                                    (Value::Text("type".into()), Value::Text("public-key".into())),
+                                                    (
+                                                        Value::Text("id".into()),
+                                                        Value::Bytes(id_bytes.clone()),
+                                                    ),
+                                                    (
+                                                        Value::Text("type".into()),
+                                                        Value::Text("public-key".into()),
+                                                    ),
                                                 ];
                                                 sort_cbor_map(&mut cred_map);
-                                                return Some((Value::Map(cred_map), id_bytes.clone()));
+                                                return Some((
+                                                    Value::Map(cred_map),
+                                                    id_bytes.clone(),
+                                                ));
                                             }
                                         }
                                     }
@@ -199,7 +208,8 @@ pub fn build_silent_assertion_response(rp_id: &str, cred_descriptor: Value) -> V
     sort_cbor_map(&mut map);
 
     let mut out = Vec::new();
-    ciborium::ser::into_writer(&Value::Map(map), &mut out).expect("Failed to serialize silent assertion");
+    ciborium::ser::into_writer(&Value::Map(map), &mut out)
+        .expect("Failed to serialize silent assertion");
     out
 }
 
@@ -315,17 +325,15 @@ pub fn build_get_info_response() -> Vec<u8> {
     // 0x01: versions: ["FIDO_2_0"]
     map.push((
         Value::Integer(1.into()),
-        Value::Array(vec![
-            Value::Text("FIDO_2_0".into()),
-        ]),
+        Value::Array(vec![Value::Text("FIDO_2_0".into())]),
     ));
 
     // 0x03: aaguid (16 bytes) - Apple Passkey AAGUID
     map.push((
         Value::Integer(3.into()),
         Value::Bytes(vec![
-            0xf2, 0x4a, 0x8e, 0x70, 0xd0, 0xd3, 0xf8, 0x2c,
-            0x29, 0x37, 0x32, 0x52, 0x3c, 0xc4, 0xde, 0x5a,
+            0xf2, 0x4a, 0x8e, 0x70, 0xd0, 0xd3, 0xf8, 0x2c, 0x29, 0x37, 0x32, 0x52, 0x3c, 0xc4,
+            0xde, 0x5a,
         ]),
     ));
 
@@ -336,32 +344,20 @@ pub fn build_get_info_response() -> Vec<u8> {
         (Value::Text("uv".into()), Value::Bool(true)),
     ];
     sort_cbor_map(&mut opts);
-    map.push((
-        Value::Integer(4.into()),
-        Value::Map(opts),
-    ));
+    map.push((Value::Integer(4.into()), Value::Map(opts)));
 
     // 0x05: maxMsgSize: 1200 bytes
-    map.push((
-        Value::Integer(5.into()),
-        Value::Integer(1200.into()),
-    ));
+    map.push((Value::Integer(5.into()), Value::Integer(1200.into())));
 
     // 0x07: maxCredentialCountInList: 32
     // Informs the browser that the authenticator can process up to 32 credentials in allowList.
     // This prevents Chromium/Firefox from chunking allowList into size-1 batches and sending
     // silent pre-flight probes (up=false) that cause authentication failure and dummy touch fallback.
-    map.push((
-        Value::Integer(7.into()),
-        Value::Integer(32.into()),
-    ));
+    map.push((Value::Integer(7.into()), Value::Integer(32.into())));
 
     // 0x08: maxCredentialIdLength: 256
     // Required alongside maxCredentialCountInList for Chromium/Firefox to enable list batching.
-    map.push((
-        Value::Integer(8.into()),
-        Value::Integer(256.into()),
-    ));
+    map.push((Value::Integer(8.into()), Value::Integer(256.into())));
 
     // 0x09: transports: ["usb", "hybrid"]
     map.push((
@@ -567,14 +563,21 @@ pub fn prepare_make_credential_for_cable(raw_cbor: &[u8]) -> (Vec<u8>, String) {
                         _ => final_name.clone(),
                     };
 
-                    let final_id = id_val.unwrap_or_else(|| Value::Bytes(final_name.as_bytes().to_vec()));
+                    let final_id =
+                        id_val.unwrap_or_else(|| Value::Bytes(final_name.as_bytes().to_vec()));
 
-                    summary.push_str(&format!("user='{}' displayName='{}' ", final_name, final_display_name));
+                    summary.push_str(&format!(
+                        "user='{}' displayName='{}' ",
+                        final_name, final_display_name
+                    ));
 
                     let mut clean_user = vec![
                         (Value::Text("id".into()), final_id),
                         (Value::Text("name".into()), Value::Text(final_name)),
-                        (Value::Text("displayName".into()), Value::Text(final_display_name)),
+                        (
+                            Value::Text("displayName".into()),
+                            Value::Text(final_display_name),
+                        ),
                     ];
                     clean_user.extend(other_user);
                     sort_cbor_map(&mut clean_user);
@@ -630,7 +633,10 @@ pub fn prepare_make_credential_for_cable(raw_cbor: &[u8]) -> (Vec<u8>, String) {
                             }
                         }
                         if !sanitized_list.is_empty() {
-                            summary.push_str(&format!("excludeList({} items, transports stripped) ", sanitized_list.len()));
+                            summary.push_str(&format!(
+                                "excludeList({} items, transports stripped) ",
+                                sanitized_list.len()
+                            ));
                             new_entries.push((k, Value::Array(sanitized_list)));
                         }
                     }
@@ -746,7 +752,10 @@ pub fn prepare_get_assertion_for_cable(raw_cbor: &[u8]) -> (Vec<u8>, String) {
                             }
                         }
                         if !sanitized_list.is_empty() {
-                            summary.push_str(&format!("allowList({} items, transports stripped) ", sanitized_list.len()));
+                            summary.push_str(&format!(
+                                "allowList({} items, transports stripped) ",
+                                sanitized_list.len()
+                            ));
                             new_entries.push((k, Value::Array(sanitized_list)));
                         }
                     }
@@ -808,7 +817,10 @@ mod tests {
         assert_eq!(rp_id, "github.com");
 
         assert_eq!(extract_assertion_rp_id(&[]), "Passkey Authentication");
-        assert_eq!(extract_assertion_rp_id(&[0x02, 0xff]), "Passkey Authentication");
+        assert_eq!(
+            extract_assertion_rp_id(&[0x02, 0xff]),
+            "Passkey Authentication"
+        );
     }
 
     #[test]
@@ -883,7 +895,10 @@ mod tests {
         rp_map.push((Value::Text("id".into()), Value::Text("webauthn.io".into())));
 
         let mut user_map = Vec::new();
-        user_map.push((Value::Text("id".into()), Value::Bytes(b"webauthnio-test".to_vec())));
+        user_map.push((
+            Value::Text("id".into()),
+            Value::Bytes(b"webauthnio-test".to_vec()),
+        ));
         user_map.push((Value::Text("name".into()), Value::Text("test".into())));
 
         let params = vec![
@@ -937,31 +952,51 @@ mod tests {
             assert!(!entries.iter().any(|(k, _)| *k == Value::Integer(6.into())));
 
             // Key 2 (rp) must contain both id and name
-            let rp_entry = entries.iter().find(|(k, _)| *k == Value::Integer(2.into())).unwrap();
+            let rp_entry = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(2.into()))
+                .unwrap();
             if let Value::Map(ref rp) = rp_entry.1 {
-                assert!(rp.iter().any(|(k, v)| *k == Value::Text("id".into()) && *v == Value::Text("webauthn.io".into())));
-                assert!(rp.iter().any(|(k, v)| *k == Value::Text("name".into()) && *v == Value::Text("webauthn.io".into())));
+                assert!(rp.iter().any(|(k, v)| *k == Value::Text("id".into())
+                    && *v == Value::Text("webauthn.io".into())));
+                assert!(rp.iter().any(|(k, v)| *k == Value::Text("name".into())
+                    && *v == Value::Text("webauthn.io".into())));
             } else {
                 panic!("Expected rp Map");
             }
 
             // Key 3 (user) must contain id, name, and displayName
-            let user_entry = entries.iter().find(|(k, _)| *k == Value::Integer(3.into())).unwrap();
+            let user_entry = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(3.into()))
+                .unwrap();
             if let Value::Map(ref user) = user_entry.1 {
-                assert!(user.iter().any(|(k, v)| *k == Value::Text("name".into()) && *v == Value::Text("test".into())));
-                assert!(user.iter().any(|(k, v)| *k == Value::Text("displayName".into()) && *v == Value::Text("test".into())));
-                assert!(user.iter().any(|(k, v)| *k == Value::Text("id".into()) && *v == Value::Bytes(b"webauthnio-test".to_vec())));
+                assert!(user
+                    .iter()
+                    .any(|(k, v)| *k == Value::Text("name".into())
+                        && *v == Value::Text("test".into())));
+                assert!(user
+                    .iter()
+                    .any(|(k, v)| *k == Value::Text("displayName".into())
+                        && *v == Value::Text("test".into())));
+                assert!(user.iter().any(|(k, v)| *k == Value::Text("id".into())
+                    && *v == Value::Bytes(b"webauthnio-test".to_vec())));
             } else {
                 panic!("Expected user Map");
             }
 
             // Key 4 (pubKeyCredParams) must contain exclusively ES256 (-7)
-            let params_entry = entries.iter().find(|(k, _)| *k == Value::Integer(4.into())).unwrap();
+            let params_entry = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(4.into()))
+                .unwrap();
             if let Value::Array(ref params) = params_entry.1 {
                 assert_eq!(params.len(), 1);
                 if let Value::Map(ref p) = params[0] {
-                    assert!(p.iter().any(|(k, v)| *k == Value::Text("alg".into()) && *v == Value::Integer((-7).into())));
-                    assert!(p.iter().any(|(k, v)| *k == Value::Text("type".into()) && *v == Value::Text("public-key".into())));
+                    assert!(p.iter().any(|(k, v)| *k == Value::Text("alg".into())
+                        && *v == Value::Integer((-7).into())));
+                    assert!(p.iter().any(|(k, v)| *k == Value::Text("type".into())
+                        && *v == Value::Text("public-key".into())));
                 } else {
                     panic!("Expected param Map");
                 }
@@ -970,11 +1005,18 @@ mod tests {
             }
 
             // Key 7 (options) must ONLY contain "rk" and "uv"
-            let options_entry = entries.iter().find(|(k, _)| *k == Value::Integer(7.into())).unwrap();
+            let options_entry = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(7.into()))
+                .unwrap();
             if let Value::Map(ref opts) = options_entry.1 {
                 assert_eq!(opts.len(), 2);
-                assert!(opts.iter().any(|(k, v)| *k == Value::Text("rk".into()) && *v == Value::Bool(true)));
-                assert!(opts.iter().any(|(k, v)| *k == Value::Text("uv".into()) && *v == Value::Bool(true)));
+                assert!(opts
+                    .iter()
+                    .any(|(k, v)| *k == Value::Text("rk".into()) && *v == Value::Bool(true)));
+                assert!(opts
+                    .iter()
+                    .any(|(k, v)| *k == Value::Text("uv".into()) && *v == Value::Bool(true)));
                 assert!(!opts.iter().any(|(k, _)| *k == Value::Text("up".into())));
                 assert!(!opts.iter().any(|(k, _)| *k == Value::Text("plat".into())));
             } else {
@@ -982,13 +1024,16 @@ mod tests {
             }
 
             // Verify canonical key ordering: 1, 2, 3, 4, 7
-            let key_nums: Vec<i128> = entries.iter().map(|(k, _)| {
-                if let Value::Integer(i) = k {
-                    (*i).into()
-                } else {
-                    -1
-                }
-            }).collect();
+            let key_nums: Vec<i128> = entries
+                .iter()
+                .map(|(k, _)| {
+                    if let Value::Integer(i) = k {
+                        (*i).into()
+                    } else {
+                        -1
+                    }
+                })
+                .collect();
             assert_eq!(key_nums, vec![1, 2, 3, 4, 7]);
         } else {
             panic!("Expected CBOR map");
@@ -1021,13 +1066,16 @@ mod tests {
         let val: Value = ciborium::from_reader(&sanitized[1..]).unwrap();
         if let Value::Map(entries) = val {
             assert!(!entries.iter().any(|(k, _)| *k == Value::Integer(4.into())));
-            let key_nums: Vec<i128> = entries.iter().map(|(k, _)| {
-                if let Value::Integer(i) = k {
-                    (*i).into()
-                } else {
-                    -1
-                }
-            }).collect();
+            let key_nums: Vec<i128> = entries
+                .iter()
+                .map(|(k, _)| {
+                    if let Value::Integer(i) = k {
+                        (*i).into()
+                    } else {
+                        -1
+                    }
+                })
+                .collect();
             assert_eq!(key_nums, vec![1, 2, 5]);
         } else {
             panic!("Expected CBOR Map");
@@ -1043,7 +1091,10 @@ mod tests {
 
         let mut map = Vec::new();
         map.push((Value::Integer(1.into()), Value::Text("webauthn.io".into())));
-        map.push((Value::Integer(3.into()), Value::Array(vec![Value::Map(desc)])));
+        map.push((
+            Value::Integer(3.into()),
+            Value::Array(vec![Value::Map(desc)]),
+        ));
 
         let mut cbor = vec![CTAP_CMD_GET_ASSERTION];
         ciborium::ser::into_writer(&Value::Map(map), &mut cbor).unwrap();
@@ -1053,7 +1104,9 @@ mod tests {
         let (desc_val, extracted_id) = extracted.unwrap();
         assert_eq!(extracted_id, cred_id);
         if let Value::Map(entries) = desc_val {
-            assert!(entries.iter().any(|(k, v)| *k == Value::Text("id".into()) && *v == Value::Bytes(cred_id.clone())));
+            assert!(entries.iter().any(
+                |(k, v)| *k == Value::Text("id".into()) && *v == Value::Bytes(cred_id.clone())
+            ));
         } else {
             panic!("Expected Map in credential descriptor");
         }
@@ -1132,17 +1185,25 @@ mod tests {
         let mut desc_map = Vec::new();
         desc_map.push((Value::Text("id".into()), Value::Bytes(vec![1, 2, 3, 4])));
         desc_map.push((Value::Text("type".into()), Value::Text("public-key".into())));
-        desc_map.push((Value::Text("transports".into()), Value::Array(vec![
-            Value::Text("usb".into()),
-            Value::Text("ble".into()),
-        ])));
+        desc_map.push((
+            Value::Text("transports".into()),
+            Value::Array(vec![Value::Text("usb".into()), Value::Text("ble".into())]),
+        ));
 
-        let sanitized = sanitize_credential_descriptor(&Value::Map(desc_map)).expect("Sanitized descriptor");
+        let sanitized =
+            sanitize_credential_descriptor(&Value::Map(desc_map)).expect("Sanitized descriptor");
         if let Value::Map(entries) = sanitized {
             assert_eq!(entries.len(), 2);
-            assert!(entries.iter().any(|(k, v)| *k == Value::Text("id".into()) && *v == Value::Bytes(vec![1, 2, 3, 4])));
-            assert!(entries.iter().any(|(k, v)| *k == Value::Text("type".into()) && *v == Value::Text("public-key".into())));
-            assert!(!entries.iter().any(|(k, _)| *k == Value::Text("transports".into())));
+            assert!(entries.iter().any(
+                |(k, v)| *k == Value::Text("id".into()) && *v == Value::Bytes(vec![1, 2, 3, 4])
+            ));
+            assert!(entries
+                .iter()
+                .any(|(k, v)| *k == Value::Text("type".into())
+                    && *v == Value::Text("public-key".into())));
+            assert!(!entries
+                .iter()
+                .any(|(k, _)| *k == Value::Text("transports".into())));
         } else {
             panic!("Expected CBOR Map");
         }
@@ -1154,12 +1215,18 @@ mod tests {
         let mut desc = Vec::new();
         desc.push((Value::Text("id".into()), Value::Bytes(cred_id.clone())));
         desc.push((Value::Text("type".into()), Value::Text("public-key".into())));
-        desc.push((Value::Text("transports".into()), Value::Array(vec![Value::Text("usb".into())])));
+        desc.push((
+            Value::Text("transports".into()),
+            Value::Array(vec![Value::Text("usb".into())]),
+        ));
 
         let mut map = Vec::new();
         map.push((Value::Integer(1.into()), Value::Text("webauthn.io".into())));
         map.push((Value::Integer(2.into()), Value::Bytes(vec![0x11; 32])));
-        map.push((Value::Integer(3.into()), Value::Array(vec![Value::Map(desc)])));
+        map.push((
+            Value::Integer(3.into()),
+            Value::Array(vec![Value::Map(desc)]),
+        ));
 
         let mut cbor = vec![CTAP_CMD_GET_ASSERTION];
         ciborium::ser::into_writer(&Value::Map(map), &mut cbor).unwrap();
@@ -1169,14 +1236,21 @@ mod tests {
 
         let val: Value = ciborium::from_reader(&sanitized[1..]).unwrap();
         if let Value::Map(entries) = val {
-            let allow_list_entry = entries.iter().find(|(k, _)| *k == Value::Integer(3.into())).unwrap();
+            let allow_list_entry = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(3.into()))
+                .unwrap();
             if let Value::Array(ref list) = allow_list_entry.1 {
                 assert_eq!(list.len(), 1);
                 if let Value::Map(ref d) = list[0] {
                     assert_eq!(d.len(), 2);
-                    assert!(d.iter().any(|(k, v)| *k == Value::Text("id".into()) && *v == Value::Bytes(cred_id.clone())));
-                    assert!(d.iter().any(|(k, v)| *k == Value::Text("type".into()) && *v == Value::Text("public-key".into())));
-                    assert!(!d.iter().any(|(k, _)| *k == Value::Text("transports".into())));
+                    assert!(d.iter().any(|(k, v)| *k == Value::Text("id".into())
+                        && *v == Value::Bytes(cred_id.clone())));
+                    assert!(d.iter().any(|(k, v)| *k == Value::Text("type".into())
+                        && *v == Value::Text("public-key".into())));
+                    assert!(!d
+                        .iter()
+                        .any(|(k, _)| *k == Value::Text("transports".into())));
                 } else {
                     panic!("Expected descriptor map");
                 }
@@ -1194,7 +1268,10 @@ mod tests {
         let mut desc = Vec::new();
         desc.push((Value::Text("id".into()), Value::Bytes(cred_id.clone())));
         desc.push((Value::Text("type".into()), Value::Text("public-key".into())));
-        desc.push((Value::Text("transports".into()), Value::Array(vec![Value::Text("usb".into())])));
+        desc.push((
+            Value::Text("transports".into()),
+            Value::Array(vec![Value::Text("usb".into())]),
+        ));
 
         let mut rp_map = Vec::new();
         rp_map.push((Value::Text("id".into()), Value::Text("webauthn.io".into())));
@@ -1206,7 +1283,10 @@ mod tests {
         map.push((Value::Integer(1.into()), Value::Bytes(vec![0xAA; 32])));
         map.push((Value::Integer(2.into()), Value::Map(rp_map)));
         map.push((Value::Integer(3.into()), Value::Map(user_map)));
-        map.push((Value::Integer(5.into()), Value::Array(vec![Value::Map(desc)])));
+        map.push((
+            Value::Integer(5.into()),
+            Value::Array(vec![Value::Map(desc)]),
+        ));
 
         let mut cbor = vec![CTAP_CMD_MAKE_CREDENTIAL];
         ciborium::ser::into_writer(&Value::Map(map), &mut cbor).unwrap();
@@ -1216,12 +1296,17 @@ mod tests {
 
         let val: Value = ciborium::from_reader(&sanitized[1..]).unwrap();
         if let Value::Map(entries) = val {
-            let exclude_entry = entries.iter().find(|(k, _)| *k == Value::Integer(5.into())).unwrap();
+            let exclude_entry = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(5.into()))
+                .unwrap();
             if let Value::Array(ref list) = exclude_entry.1 {
                 assert_eq!(list.len(), 1);
                 if let Value::Map(ref d) = list[0] {
                     assert_eq!(d.len(), 2);
-                    assert!(!d.iter().any(|(k, _)| *k == Value::Text("transports".into())));
+                    assert!(!d
+                        .iter()
+                        .any(|(k, _)| *k == Value::Text("transports".into())));
                 } else {
                     panic!("Expected descriptor map");
                 }
@@ -1283,7 +1368,10 @@ mod tests {
         let mut param = Vec::new();
         param.push((Value::Text("alg".into()), Value::Integer((-257).into())));
         param.push((Value::Text("type".into()), Value::Text("public-key".into())));
-        map.push((Value::Integer(4.into()), Value::Array(vec![Value::Map(param)])));
+        map.push((
+            Value::Integer(4.into()),
+            Value::Array(vec![Value::Map(param)]),
+        ));
 
         let mut cbor = vec![CTAP_CMD_MAKE_CREDENTIAL];
         ciborium::ser::into_writer(&Value::Map(map), &mut cbor).unwrap();
@@ -1294,11 +1382,17 @@ mod tests {
         // Verify RS256 is preserved in CBOR
         let val: Value = ciborium::from_reader(&sanitized[1..]).unwrap();
         if let Value::Map(entries) = val {
-            let (_, params_val) = entries.iter().find(|(k, _)| *k == Value::Integer(4.into())).unwrap();
+            let (_, params_val) = entries
+                .iter()
+                .find(|(k, _)| *k == Value::Integer(4.into()))
+                .unwrap();
             if let Value::Array(ref p_arr) = params_val {
                 assert_eq!(p_arr.len(), 1);
                 if let Value::Map(ref fields) = p_arr[0] {
-                    let (_, alg_val) = fields.iter().find(|(k, _)| *k == Value::Text("alg".into())).unwrap();
+                    let (_, alg_val) = fields
+                        .iter()
+                        .find(|(k, _)| *k == Value::Text("alg".into()))
+                        .unwrap();
                     assert_eq!(*alg_val, Value::Integer((-257).into()));
                 }
             }
@@ -1320,4 +1414,3 @@ mod tests {
         assert_eq!(req.client_data_hash, hash);
     }
 }
-

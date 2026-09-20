@@ -1,0 +1,42 @@
+# Maintainer: Chris Sommers <chris.sommers@icloud.com>
+pkgname=cable-uhid-bridge-git
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc="Linux virtual USB FIDO2 token bridge for mobile passkeys via caBLE v2 (QR code)"
+arch=('x86_64')
+url="https://github.com/baseman70/cable-uhid-bridge"
+license=('MIT' 'Apache-2.0')
+depends=('dbus' 'libxkbcommon')
+makedepends=('git' 'cargo' 'clang' 'pkgconf')
+provides=('cable-uhid-bridge')
+conflicts=('cable-uhid-bridge')
+source=("git+https://github.com/baseman70/cable-uhid-bridge.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/cable-uhid-bridge"
+    git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || \
+    printf "0.1.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+    cd "$srcdir/cable-uhid-bridge"
+    cargo build --release
+}
+
+check() {
+    cd "$srcdir/cable-uhid-bridge"
+    cargo test --release
+}
+
+package() {
+    cd "$srcdir/cable-uhid-bridge"
+
+    install -Dm755 "target/release/cable-uhid-bridge" "$pkgdir/usr/bin/cable-uhid-bridge"
+    install -Dm644 "contrib/cable-uhid-bridge.service" "$pkgdir/usr/lib/systemd/user/cable-uhid-bridge.service"
+    install -Dm644 "contrib/70-uhid.rules" "$pkgdir/usr/lib/udev/rules.d/70-uhid.rules"
+    install -Dm644 "contrib/uhid.conf" "$pkgdir/usr/lib/modules-load.d/uhid.conf"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+    install -Dm644 "LICENSE-APACHE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

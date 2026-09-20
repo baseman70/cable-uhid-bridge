@@ -80,11 +80,20 @@ done
 
 print_header
 
-# 1. Preflight checks & automated dependency installation
+# Check if running from a precompiled release bundle
+PREBUILT_BINARY=""
+if [ -f "$SCRIPT_DIR/cable-uhid-bridge" ] && [ ! -d "$SCRIPT_DIR/.git" ]; then
+    PREBUILT_BINARY="$SCRIPT_DIR/cable-uhid-bridge"
+fi
+
+# 1. Preflight checks & dependency verification
 echo -e "${BOLD}[1/5] Checking system prerequisites...${NC}"
 
-# Check for C build dependencies first (needed for Rust crates or rustup curl)
-MISSING_DEPS=()
+if [ -n "$PREBUILT_BINARY" ]; then
+    echo -e "  ${GREEN}✓${NC} Precompiled binary detected: ${BOLD}$PREBUILT_BINARY${NC} (source compilation not required)."
+else
+    # Check for C build dependencies first (needed for Rust crates or rustup curl)
+    MISSING_DEPS=()
 
 if ! command -v pkg-config >/dev/null 2>&1 && ! command -v pkgconf >/dev/null 2>&1; then
     MISSING_DEPS+=("pkg-config")
@@ -192,34 +201,35 @@ if ! command -v cargo >/dev/null 2>&1; then
     fi
 fi
 
-if ! command -v cargo >/dev/null 2>&1; then
-    echo -e "  ${YELLOW}!${NC} Rust & Cargo not found."
-    AUTO_INSTALL_RUST=false
-    if [ "$ASSUME_YES" = true ]; then
-        AUTO_INSTALL_RUST=true
-    elif [ -t 0 ]; then
-        read -rp "  Would you like to automatically install Rust via rustup now? [Y/n] " response
-        if [[ "$response" =~ ^[Yy]$ ]] || [[ -z "$response" ]]; then
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}!${NC} Rust & Cargo not found."
+        AUTO_INSTALL_RUST=false
+        if [ "$ASSUME_YES" = true ]; then
             AUTO_INSTALL_RUST=true
+        elif [ -t 0 ]; then
+            read -rp "  Would you like to automatically install Rust via rustup now? [Y/n] " response
+            if [[ "$response" =~ ^[Yy]$ ]] || [[ -z "$response" ]]; then
+                AUTO_INSTALL_RUST=true
+            fi
         fi
-    fi
 
-    if [ "$AUTO_INSTALL_RUST" = true ]; then
-        echo -e "  Installing Rust toolchain (https://rustup.rs)..."
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        if [ -f "$HOME/.cargo/env" ]; then
-            # shellcheck source=/dev/null
-            source "$HOME/.cargo/env"
+        if [ "$AUTO_INSTALL_RUST" = true ]; then
+            echo -e "  Installing Rust toolchain (https://rustup.rs)..."
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+            if [ -f "$HOME/.cargo/env" ]; then
+                # shellcheck source=/dev/null
+                source "$HOME/.cargo/env"
+            fi
+            export PATH="$HOME/.cargo/bin:$PATH"
+            echo -e "  ${GREEN}✓${NC} Rust & Cargo installed successfully."
+        else
+            echo -e "  ${RED}✗ Cargo is required to build cable-uhid-bridge.${NC}"
+            echo -e "  Please install Rust manually: ${BOLD}curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh${NC}"
+            exit 1
         fi
-        export PATH="$HOME/.cargo/bin:$PATH"
-        echo -e "  ${GREEN}✓${NC} Rust & Cargo installed successfully."
     else
-        echo -e "  ${RED}✗ Cargo is required to build cable-uhid-bridge.${NC}"
-        echo -e "  Please install Rust manually: ${BOLD}curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh${NC}"
-        exit 1
+        echo -e "  ${GREEN}✓${NC} Rust & Cargo found ($(cargo --version))."
     fi
-else
-    echo -e "  ${GREEN}✓${NC} Rust & Cargo found ($(cargo --version))."
 fi
 
 # Check for Bluetooth
@@ -244,10 +254,16 @@ if [ ! -d /sys/class/misc/uhid ]; then
 fi
 echo -e "  ${GREEN}✓${NC} /dev/uhid kernel interface is active in sysfs."
 
-# 2. Build release binary
-echo -e "\n${BOLD}[2/5] Compiling release binary...${NC}"
-cd "$SCRIPT_DIR"
-cargo build --release --bin cable-uhid-bridge
+# 2. Build or install release binary
+if [ -n "$PREBUILT_BINARY" ]; then
+    echo -e "\n${BOLD}[2/5] Preparing precompiled release binary...${NC}"
+    SOURCE_BIN="$PREBUILT_BINARY"
+else
+    echo -e "\n${BOLD}[2/5] Compiling release binary...${NC}"
+    cd "$SCRIPT_DIR"
+    cargo build --release --bin cable-uhid-bridge
+    SOURCE_BIN="$SCRIPT_DIR/target/release/cable-uhid-bridge"
+fi
 
 # If the user service is currently running, stop it prior to replacing binary to avoid ETXTBSY
 if systemctl --user is-active --quiet cable-uhid-bridge.service 2>/dev/null; then
@@ -256,7 +272,7 @@ if systemctl --user is-active --quiet cable-uhid-bridge.service 2>/dev/null; the
 fi
 
 mkdir -p "$BIN_DEST"
-install -m 755 "$SCRIPT_DIR/target/release/cable-uhid-bridge" "$BIN_DEST/cable-uhid-bridge"
+install -m 755 "$SOURCE_BIN" "$BIN_DEST/cable-uhid-bridge"
 echo -e "  ${GREEN}✓${NC} Installed binary to: ${BOLD}$BIN_DEST/cable-uhid-bridge${NC}"
 
 # 3. Udev rule installation

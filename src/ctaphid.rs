@@ -65,7 +65,10 @@ impl<T: std::io::Read + std::io::Write> CtapHid<T> {
         }
     }
 
-    pub fn process_report_bytes(&mut self, report_bytes: &[u8]) -> Result<Option<(Channel, Command, Vec<u8>)>> {
+    pub fn process_report_bytes(
+        &mut self,
+        report_bytes: &[u8],
+    ) -> Result<Option<(Channel, Command, Vec<u8>)>> {
         if report_bytes.is_empty() {
             return Ok(None);
         }
@@ -154,9 +157,7 @@ impl<T: std::io::Read + std::io::Write> CtapHid<T> {
         };
 
         match event {
-            OutputEvent::Output { data: report_bytes } => {
-                self.process_report_bytes(&report_bytes)
-            }
+            OutputEvent::Output { data: report_bytes } => self.process_report_bytes(&report_bytes),
             OutputEvent::Start { .. } => {
                 debug!("Kernel sent UHID_START event");
                 Ok(None)
@@ -223,7 +224,12 @@ impl<T: std::io::Read + std::io::Write> CtapHid<T> {
         self.send_single_packet(reply_destination, Command::Init, &reply_bytes)
     }
 
-    pub fn send_cbor_response(&mut self, channel: Channel, ctap_status: u8, cbor_data: &[u8]) -> Result<()> {
+    pub fn send_cbor_response(
+        &mut self,
+        channel: Channel,
+        ctap_status: u8,
+        cbor_data: &[u8],
+    ) -> Result<()> {
         let mut payload = Vec::with_capacity(1 + cbor_data.len());
         payload.push(ctap_status);
         payload.extend_from_slice(cbor_data);
@@ -234,7 +240,12 @@ impl<T: std::io::Read + std::io::Write> CtapHid<T> {
         self.send_single_packet(channel, Command::Cbor, &[status])
     }
 
-    pub fn send_single_packet(&mut self, channel: Channel, command: Command, data: &[u8]) -> Result<()> {
+    pub fn send_single_packet(
+        &mut self,
+        channel: Channel,
+        command: Command,
+        data: &[u8],
+    ) -> Result<()> {
         let packet = InitializationPacket {
             channel,
             command,
@@ -247,13 +258,20 @@ impl<T: std::io::Read + std::io::Write> CtapHid<T> {
         Ok(())
     }
 
-    pub fn send_response(&mut self, channel: Channel, command: Command, data: Vec<u8>) -> Result<()> {
+    pub fn send_response(
+        &mut self,
+        channel: Channel,
+        command: Command,
+        data: Vec<u8>,
+    ) -> Result<()> {
         let message = Message {
             channel,
             command,
             data,
         };
-        let fragments = message.fragments(64).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        let fragments = message
+            .fragments(64)
+            .map_err(|e| anyhow::anyhow!("{:?}", e))?;
         let mut report = [0u8; 64];
         for packet in fragments {
             packet.serialize(&mut report)?;

@@ -78,7 +78,35 @@ cd cable-uhid-bridge
 
 ---
 
-## 📦 Manual Installation & Prerequisites
+## 📦 Packages & Precompiled Binaries
+
+If you prefer installing prebuilt packages without compiling from source:
+
+### 1. Debian / Ubuntu / Pop!_OS (`.deb`)
+Download the `.deb` package from the [latest GitHub Release](https://github.com/baseman70/cable-uhid-bridge/releases):
+```bash
+sudo apt install ./cable-uhid-bridge_*_amd64.deb
+systemctl --user enable --now cable-uhid-bridge
+```
+
+### 2. Arch Linux (AUR / `PKGBUILD`)
+Install from the AUR helper of your choice, or build from the provided PKGBUILD:
+```bash
+cd contrib/arch
+makepkg -si
+systemctl --user enable --now cable-uhid-bridge
+```
+
+### 3. Precompiled Release Tarball
+```bash
+tar -xzf cable-uhid-bridge-v*-x86_64-unknown-linux-gnu.tar.gz
+cd cable-uhid-bridge-*
+./install.sh
+```
+
+---
+
+## 🛠️ Manual Installation & Build from Source
 
 If you prefer to install dependencies and configure the service manually:
 

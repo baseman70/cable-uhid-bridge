@@ -91,21 +91,10 @@ pub struct CreateParams {
 pub enum InputEvent<'a> {
     Create(CreateParams),
     Destroy,
-    Input {
-        data: &'a [u8],
-    },
-    Output {
-        data: Vec<u8>,
-    },
-    GetReportReply {
-        id: u32,
-        err: u16,
-        data: Vec<u8>,
-    },
-    SetReportReply {
-        id: u32,
-        err: u16,
-    },
+    Input { data: &'a [u8] },
+    Output { data: Vec<u8> },
+    GetReportReply { id: u32, err: u16, data: Vec<u8> },
+    SetReportReply { id: u32, err: u16 },
 }
 
 impl<'a> From<InputEvent<'a>> for sys::uhid_event {
@@ -189,13 +178,26 @@ impl<'a> From<InputEvent<'a>> for sys::uhid_event {
 }
 
 pub enum OutputEvent {
-    Start { dev_flags: Vec<DevFlags> },
+    Start {
+        dev_flags: Vec<DevFlags>,
+    },
     Stop,
     Open,
     Close,
-    Output { data: Vec<u8> },
-    GetReport { id: u32, report_number: u8, report_type: ReportType },
-    SetReport { id: u32, report_number: u8, report_type: ReportType, data: Vec<u8> },
+    Output {
+        data: Vec<u8>,
+    },
+    GetReport {
+        id: u32,
+        report_number: u8,
+        report_type: ReportType,
+    },
+    SetReport {
+        id: u32,
+        report_number: u8,
+        report_type: ReportType,
+        data: Vec<u8>,
+    },
 }
 
 fn to_uhid_event_type(value: u32) -> Option<sys::uhid_event_type> {
@@ -260,7 +262,8 @@ impl TryFrom<sys::uhid_event> for OutputEvent {
 impl TryFrom<[u8; UHID_EVENT_SIZE]> for OutputEvent {
     type Error = StreamError;
     fn try_from(src: [u8; UHID_EVENT_SIZE]) -> Result<Self, Self::Error> {
-        let event: sys::uhid_event = unsafe { std::ptr::read_unaligned(src.as_ptr() as *const sys::uhid_event) };
+        let event: sys::uhid_event =
+            unsafe { std::ptr::read_unaligned(src.as_ptr() as *const sys::uhid_event) };
         OutputEvent::try_from(event)
     }
 }
@@ -339,21 +342,21 @@ pub fn fido_report_descriptor() -> Vec<u8> {
     // Standard FIDO U2FHID report descriptor (64-byte IN/OUT reports)
     vec![
         0x06, 0xD0, 0xF1, /* Usage Page (FIDO Alliance) */
-        0x09, 0x01,       /* Usage (U2F HID Auth. Device) */
-        0xA1, 0x01,       /* Collection (Application) */
-        0x09, 0x20,       /* Usage (Input Report Data) */
-        0x15, 0x00,       /* Logical Minimum (0) */
+        0x09, 0x01, /* Usage (U2F HID Auth. Device) */
+        0xA1, 0x01, /* Collection (Application) */
+        0x09, 0x20, /* Usage (Input Report Data) */
+        0x15, 0x00, /* Logical Minimum (0) */
         0x26, 0xFF, 0x00, /* Logical Maximum (255) */
-        0x75, 0x08,       /* Report Size (8 bits) */
-        0x95, 0x40,       /* Report Count (64 bytes) */
-        0x81, 0x02,       /* Input (Data, Var, Abs) */
-        0x09, 0x21,       /* Usage (Output Report Data) */
-        0x15, 0x00,       /* Logical Minimum (0) */
+        0x75, 0x08, /* Report Size (8 bits) */
+        0x95, 0x40, /* Report Count (64 bytes) */
+        0x81, 0x02, /* Input (Data, Var, Abs) */
+        0x09, 0x21, /* Usage (Output Report Data) */
+        0x15, 0x00, /* Logical Minimum (0) */
         0x26, 0xFF, 0x00, /* Logical Maximum (255) */
-        0x75, 0x08,       /* Report Size (8 bits) */
-        0x95, 0x40,       /* Report Count (64 bytes) */
-        0x91, 0x02,       /* Output (Data, Var, Abs) */
-        0xC0,             /* End Collection */
+        0x75, 0x08, /* Report Size (8 bits) */
+        0x95, 0x40, /* Report Count (64 bytes) */
+        0x91, 0x02, /* Output (Data, Var, Abs) */
+        0xC0, /* End Collection */
     ]
 }
 
@@ -401,7 +404,8 @@ mod tests {
             version: 1,
             country: 0,
             rd_data: huge_rd,
-        }).into();
+        })
+        .into();
 
         let ev_type = event.type_;
         assert_eq!(ev_type, sys::uhid_event_type_UHID_CREATE2);
