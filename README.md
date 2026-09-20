@@ -7,6 +7,10 @@
 
 A lightweight Linux background daemon providing **cross-device WebAuthn / Passkey authentication via caBLE v2 (QR code)** by emulating a virtual USB FIDO2 token over `/dev/uhid`.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="cable-uhid-bridge live demo on WebAuthn.io" width="800">
+</p>
+
 ---
 
 ## The Problem Solved
