@@ -53,33 +53,6 @@ Firefox and Chromium on Linux lack an OS-level platform authenticator with Hybri
 
 ---
 
-## 📦 Prerequisites
-
-Ensure the following system build packages and Rust toolchain are installed before running `./install.sh`:
-
-### Debian / Ubuntu / Pop!_OS / Linux Mint
-```bash
-sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev
-```
-
-### Arch Linux / Manjaro / EndeavourOS
-```bash
-sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon
-```
-
-### Fedora / RHEL
-```bash
-sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel
-```
-
-### Rust Toolchain
-Ensure Rust 1.75+ is installed via [rustup](https://rustup.rs):
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
----
-
 ## 🚀 Quick Start (Automated Installer)
 
 An automated installer is provided for systemd-based Linux systems (Arch, Pop!_OS, Ubuntu, Debian, Fedora):
@@ -90,12 +63,13 @@ cd cable-uhid-bridge
 ./install.sh
 ```
 
-### What `install.sh` Does:
-1. **Preflight Checks**: Verifies `/dev/uhid` kernel module support and Bluetooth LE availability.
-2. **Builds Release Binary**: Compiles `cable-uhid-bridge` and installs it to `~/.local/bin/`.
-3. **Udev Rules**: Configures `/etc/udev/rules.d/70-uhid.rules` with `TAG+="uaccess"`, enabling unprivileged desktop user access without `sudo`.
-4. **Systemd User Service**: Installs and starts `cable-uhid-bridge.service` under `systemctl --user`.
-5. **Self-Verification**: Confirms the virtual token is registered and active in the Linux kernel.
+### What `install.sh` Does Automatically:
+1. **Prerequisite Auto-Detection & Installation**: Automatically checks for required system C libraries (`libdbus`, `libclang`, `libxkbcommon`) and the Rust toolchain, offering to install any missing dependencies automatically via your system package manager (`apt`, `pacman`, or `dnf`). For unattended setups, run with `./install.sh -y`.
+2. **Kernel Module Setup**: Detects and loads the `uhid` kernel module and configures `/etc/modules-load.d/uhid.conf` so it persists across system reboots.
+3. **Udev Permissions**: Installs `/etc/udev/rules.d/70-uhid.rules` with `TAG+="uaccess"`, enabling unprivileged desktop user access without `sudo`.
+4. **Builds Release Binary**: Compiles `cable-uhid-bridge` and installs it to `~/.local/bin/`.
+5. **Systemd User Service**: Configures, enables, and immediately starts `cable-uhid-bridge.service` under `systemctl --user`.
+6. **Self-Verification**: Confirms the virtual token is registered and active in the Linux kernel.
 
 ### Uninstall Anytime
 ```bash
@@ -104,11 +78,29 @@ cd cable-uhid-bridge
 
 ---
 
-## Manual Installation & Service Setup
+## 📦 Manual Installation & Prerequisites
 
-If you prefer to configure everything manually:
+If you prefer to install dependencies and configure the service manually:
 
-### 1. Configure Kernel Module & Udev Rule (One-Time)
+### 1. Install Build Dependencies
+* **Debian / Ubuntu / Pop!_OS / Linux Mint**:
+  ```bash
+  sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev curl
+  ```
+* **Arch Linux / Manjaro / EndeavourOS**:
+  ```bash
+  sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon curl
+  ```
+* **Fedora / RHEL**:
+  ```bash
+  sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel curl
+  ```
+* **Rust Toolchain**:
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+
+### 2. Configure Kernel Module & Udev Rule (One-Time)
 ```bash
 sudo modprobe uhid
 echo "uhid" | sudo tee /etc/modules-load.d/uhid.conf
@@ -116,14 +108,14 @@ echo 'KERNEL=="uhid", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-uhid.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger -s misc -a name=uhid
 ```
 
-### 2. Build & Install Binary
+### 3. Build & Install Binary
 ```bash
 cargo build --release
 mkdir -p ~/.local/bin
 install -m 755 target/release/cable-uhid-bridge ~/.local/bin/
 ```
 
-### 3. Enable Systemd User Service
+### 4. Enable Systemd User Service
 ```bash
 mkdir -p ~/.config/systemd/user
 cp contrib/cable-uhid-bridge.service ~/.config/systemd/user/
@@ -131,7 +123,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now cable-uhid-bridge.service
 ```
 
-### 4. Monitor Service
+### 5. Monitor Service
 ```bash
 systemctl --user status cable-uhid-bridge
 journalctl --user -u cable-uhid-bridge -f

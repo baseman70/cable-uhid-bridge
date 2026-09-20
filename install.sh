@@ -56,25 +56,34 @@ uninstall() {
     exit 0
 }
 
-# Handle --uninstall
-if [[ "${1:-}" == "--uninstall" ]] || [[ "${1:-}" == "-u" ]]; then
-    uninstall
-fi
+ASSUME_YES=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --uninstall|-u)
+            uninstall
+            ;;
+        --yes|-y)
+            ASSUME_YES=true
+            ;;
+        --help|-h)
+            echo "Usage: ./install.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -y, --yes        Automatic yes to prompts (unattended installation)"
+            echo "  -u, --uninstall  Uninstall binary and systemd user service"
+            echo "  -h, --help       Show this help message"
+            exit 0
+            ;;
+    esac
+done
 
 print_header
 
-# 1. Preflight checks
+# 1. Preflight checks & automated dependency installation
 echo -e "${BOLD}[1/5] Checking system prerequisites...${NC}"
 
-# Check for Rust / Cargo
-if ! command -v cargo >/dev/null 2>&1; then
-    echo -e "  ${RED}✗ Cargo is not installed.${NC}"
-    echo -e "  Please install Rust via rustup: ${BOLD}curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh${NC}"
-    exit 1
-fi
-echo -e "  ${GREEN}✓${NC} Rust & Cargo found."
-
-# Check for C build dependencies
+# Check for C build dependencies first (needed for Rust crates or rustup curl)
 MISSING_DEPS=()
 
 if ! command -v pkg-config >/dev/null 2>&1 && ! command -v pkgconf >/dev/null 2>&1; then
@@ -104,6 +113,10 @@ if [ "$HAS_LIBCLANG" = false ]; then
     MISSING_DEPS+=("libclang-dev (LLVM/Clang development library)")
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+    MISSING_DEPS+=("curl")
+fi
+
 if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     echo -e "  ${YELLOW}! Missing required C build dependencies:${NC}"
     for dep in "${MISSING_DEPS[@]}"; do
@@ -111,46 +124,57 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     done
     echo ""
 
+    AUTO_INSTALL_DEPS=false
+    if [ "$ASSUME_YES" = true ]; then
+        AUTO_INSTALL_DEPS=true
+    fi
+
     if command -v apt-get >/dev/null 2>&1; then
-        INSTALL_CMD="sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev"
-        echo -e "  To install missing packages on Debian/Ubuntu/Pop!_OS, run:\n    ${BOLD}$INSTALL_CMD${NC}\n"
-        if [ -t 0 ]; then
-            read -rp "  Would you like to install them now using apt? [y/N] " response
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev
-            else
-                echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
-                exit 1
+        INSTALL_CMD="sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev curl"
+        echo -e "  Suggested command for Debian/Ubuntu/Pop!_OS:\n    ${BOLD}$INSTALL_CMD${NC}\n"
+        if [ "$AUTO_INSTALL_DEPS" = false ] && [ -t 0 ]; then
+            read -rp "  Would you like to install them automatically now using apt? [Y/n] " response
+            if [[ "$response" =~ ^[Yy]$ ]] || [[ -z "$response" ]]; then
+                AUTO_INSTALL_DEPS=true
             fi
+        fi
+        if [ "$AUTO_INSTALL_DEPS" = true ]; then
+            echo -e "  Installing system dependencies with apt..."
+            sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev curl
         else
+            echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
             exit 1
         fi
     elif command -v pacman >/dev/null 2>&1; then
-        INSTALL_CMD="sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon"
-        echo -e "  To install missing packages on Arch/Manjaro, run:\n    ${BOLD}$INSTALL_CMD${NC}\n"
-        if [ -t 0 ]; then
-            read -rp "  Would you like to install them now using pacman? [y/N] " response
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon
-            else
-                echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
-                exit 1
+        INSTALL_CMD="sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon curl"
+        echo -e "  Suggested command for Arch/Manjaro:\n    ${BOLD}$INSTALL_CMD${NC}\n"
+        if [ "$AUTO_INSTALL_DEPS" = false ] && [ -t 0 ]; then
+            read -rp "  Would you like to install them automatically now using pacman? [Y/n] " response
+            if [[ "$response" =~ ^[Yy]$ ]] || [[ -z "$response" ]]; then
+                AUTO_INSTALL_DEPS=true
             fi
+        fi
+        if [ "$AUTO_INSTALL_DEPS" = true ]; then
+            echo -e "  Installing system dependencies with pacman..."
+            sudo pacman -S --needed --noconfirm base-devel pkgconf dbus clang libxkbcommon curl
         else
+            echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
             exit 1
         fi
     elif command -v dnf >/dev/null 2>&1; then
-        INSTALL_CMD="sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel"
-        echo -e "  To install missing packages on Fedora/RHEL, run:\n    ${BOLD}$INSTALL_CMD${NC}\n"
-        if [ -t 0 ]; then
-            read -rp "  Would you like to install them now using dnf? [y/N] " response
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel
-            else
-                echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
-                exit 1
+        INSTALL_CMD="sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel curl"
+        echo -e "  Suggested command for Fedora/RHEL:\n    ${BOLD}$INSTALL_CMD${NC}\n"
+        if [ "$AUTO_INSTALL_DEPS" = false ] && [ -t 0 ]; then
+            read -rp "  Would you like to install them automatically now using dnf? [Y/n] " response
+            if [[ "$response" =~ ^[Yy]$ ]] || [[ -z "$response" ]]; then
+                AUTO_INSTALL_DEPS=true
             fi
+        fi
+        if [ "$AUTO_INSTALL_DEPS" = true ]; then
+            echo -e "  Installing system dependencies with dnf..."
+            sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel curl
         else
+            echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
             exit 1
         fi
     else
@@ -159,6 +183,44 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     fi
 fi
 echo -e "  ${GREEN}✓${NC} C build libraries (libdbus, libclang, libxkbcommon) verified."
+
+# Check for Rust / Cargo
+if ! command -v cargo >/dev/null 2>&1; then
+    if [ -f "$HOME/.cargo/env" ]; then
+        # shellcheck source=/dev/null
+        source "$HOME/.cargo/env"
+    fi
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo -e "  ${YELLOW}!${NC} Rust & Cargo not found."
+    AUTO_INSTALL_RUST=false
+    if [ "$ASSUME_YES" = true ]; then
+        AUTO_INSTALL_RUST=true
+    elif [ -t 0 ]; then
+        read -rp "  Would you like to automatically install Rust via rustup now? [Y/n] " response
+        if [[ "$response" =~ ^[Yy]$ ]] || [[ -z "$response" ]]; then
+            AUTO_INSTALL_RUST=true
+        fi
+    fi
+
+    if [ "$AUTO_INSTALL_RUST" = true ]; then
+        echo -e "  Installing Rust toolchain (https://rustup.rs)..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+        if [ -f "$HOME/.cargo/env" ]; then
+            # shellcheck source=/dev/null
+            source "$HOME/.cargo/env"
+        fi
+        export PATH="$HOME/.cargo/bin:$PATH"
+        echo -e "  ${GREEN}✓${NC} Rust & Cargo installed successfully."
+    else
+        echo -e "  ${RED}✗ Cargo is required to build cable-uhid-bridge.${NC}"
+        echo -e "  Please install Rust manually: ${BOLD}curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh${NC}"
+        exit 1
+    fi
+else
+    echo -e "  ${GREEN}✓${NC} Rust & Cargo found ($(cargo --version))."
+fi
 
 # Check for Bluetooth
 if command -v bluetoothctl >/dev/null 2>&1; then
