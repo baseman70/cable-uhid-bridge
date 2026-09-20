@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build & Publish Release Assets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev dpkg
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile release binary
+        run: cargo build --release
+
+      - name: Run verification test suite
+        run: cargo test --release
+
+      - name: Create release tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE_DIR="cable-uhid-bridge-${VERSION}-x86_64-unknown-linux-gnu"
+          mkdir -p "${ARCHIVE_DIR}"
+          cp target/release/cable-uhid-bridge "${ARCHIVE_DIR}/"
+          cp install.sh "${ARCHIVE_DIR}/"
+          cp -r contrib "${ARCHIVE_DIR}/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "${ARCHIVE_DIR}/"
+          tar -czvf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}"
+
+      - name: Build Debian package (.deb)
+        run: |
+          chmod +x contrib/build-deb.sh contrib/debian/postinst contrib/debian/postrm
+          ./contrib/build-deb.sh
+
+      - name: Generate Checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE_FILE="cable-uhid-bridge-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          DEB_FILE=$(ls target/debian/*.deb)
+          sha256sum "${ARCHIVE_FILE}" "${DEB_FILE}" > SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cable-uhid-bridge-*-x86_64-unknown-linux-gnu.tar.gz
+            target/debian/*.deb
+            SHA256SUMS.txt
+          generate_release_notes: true
