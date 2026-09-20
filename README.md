@@ -53,6 +53,33 @@ Firefox and Chromium on Linux lack an OS-level platform authenticator with Hybri
 
 ---
 
+## 📦 Prerequisites
+
+Ensure the following system build packages and Rust toolchain are installed before running `./install.sh`:
+
+### Debian / Ubuntu / Pop!_OS / Linux Mint
+```bash
+sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev
+```
+
+### Arch Linux / Manjaro / EndeavourOS
+```bash
+sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon
+```
+
+### Fedora / RHEL
+```bash
+sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel
+```
+
+### Rust Toolchain
+Ensure Rust 1.75+ is installed via [rustup](https://rustup.rs):
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+---
+
 ## 🚀 Quick Start (Automated Installer)
 
 An automated installer is provided for systemd-based Linux systems (Arch, Pop!_OS, Ubuntu, Debian, Fedora):
@@ -81,8 +108,10 @@ cd cable-uhid-bridge
 
 If you prefer to configure everything manually:
 
-### 1. Configure Udev Rule (One-Time)
+### 1. Configure Kernel Module & Udev Rule (One-Time)
 ```bash
+sudo modprobe uhid
+echo "uhid" | sudo tee /etc/modules-load.d/uhid.conf
 echo 'KERNEL=="uhid", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-uhid.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger -s misc -a name=uhid
 ```
@@ -91,7 +120,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger -s misc -a name=uhid
 ```bash
 cargo build --release
 mkdir -p ~/.local/bin
-cp target/release/cable-uhid-bridge ~/.local/bin/
+install -m 755 target/release/cable-uhid-bridge ~/.local/bin/
 ```
 
 ### 3. Enable Systemd User Service

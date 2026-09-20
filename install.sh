@@ -66,6 +66,100 @@ print_header
 # 1. Preflight checks
 echo -e "${BOLD}[1/5] Checking system prerequisites...${NC}"
 
+# Check for Rust / Cargo
+if ! command -v cargo >/dev/null 2>&1; then
+    echo -e "  ${RED}✗ Cargo is not installed.${NC}"
+    echo -e "  Please install Rust via rustup: ${BOLD}curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✓${NC} Rust & Cargo found."
+
+# Check for C build dependencies
+MISSING_DEPS=()
+
+if ! command -v pkg-config >/dev/null 2>&1 && ! command -v pkgconf >/dev/null 2>&1; then
+    MISSING_DEPS+=("pkg-config")
+else
+    if ! pkg-config --exists dbus-1 2>/dev/null; then
+        MISSING_DEPS+=("libdbus-1-dev (dbus development headers)")
+    fi
+    if ! pkg-config --exists xkbcommon 2>/dev/null; then
+        MISSING_DEPS+=("libxkbcommon-dev (Wayland/X11 keyboard headers)")
+    fi
+fi
+
+# Check for libclang (needed by bindgen / uhidrs-sys)
+HAS_LIBCLANG=false
+if [ -n "${LIBCLANG_PATH:-}" ] && [ -d "$LIBCLANG_PATH" ]; then
+    HAS_LIBCLANG=true
+elif command -v llvm-config >/dev/null 2>&1; then
+    HAS_LIBCLANG=true
+elif ldconfig -p 2>/dev/null | grep -q "libclang\.so"; then
+    HAS_LIBCLANG=true
+elif ls /usr/lib*/libclang*.so* >/dev/null 2>&1 || ls /usr/lib/llvm-*/lib/libclang*.so* >/dev/null 2>&1; then
+    HAS_LIBCLANG=true
+fi
+
+if [ "$HAS_LIBCLANG" = false ]; then
+    MISSING_DEPS+=("libclang-dev (LLVM/Clang development library)")
+fi
+
+if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+    echo -e "  ${YELLOW}! Missing required C build dependencies:${NC}"
+    for dep in "${MISSING_DEPS[@]}"; do
+        echo -e "    - $dep"
+    done
+    echo ""
+
+    if command -v apt-get >/dev/null 2>&1; then
+        INSTALL_CMD="sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev"
+        echo -e "  To install missing packages on Debian/Ubuntu/Pop!_OS, run:\n    ${BOLD}$INSTALL_CMD${NC}\n"
+        if [ -t 0 ]; then
+            read -rp "  Would you like to install them now using apt? [y/N] " response
+            if [[ "$response" =~ ^[Yy]$ ]]; then
+                sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev
+            else
+                echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
+                exit 1
+            fi
+        else
+            exit 1
+        fi
+    elif command -v pacman >/dev/null 2>&1; then
+        INSTALL_CMD="sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon"
+        echo -e "  To install missing packages on Arch/Manjaro, run:\n    ${BOLD}$INSTALL_CMD${NC}\n"
+        if [ -t 0 ]; then
+            read -rp "  Would you like to install them now using pacman? [y/N] " response
+            if [[ "$response" =~ ^[Yy]$ ]]; then
+                sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon
+            else
+                echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
+                exit 1
+            fi
+        else
+            exit 1
+        fi
+    elif command -v dnf >/dev/null 2>&1; then
+        INSTALL_CMD="sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel"
+        echo -e "  To install missing packages on Fedora/RHEL, run:\n    ${BOLD}$INSTALL_CMD${NC}\n"
+        if [ -t 0 ]; then
+            read -rp "  Would you like to install them now using dnf? [y/N] " response
+            if [[ "$response" =~ ^[Yy]$ ]]; then
+                sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel
+            else
+                echo -e "  ${RED}Aborting install until prerequisites are installed.${NC}"
+                exit 1
+            fi
+        else
+            exit 1
+        fi
+    else
+        echo -e "  ${RED}Please install the missing C libraries listed above using your system package manager.${NC}"
+        exit 1
+    fi
+fi
+echo -e "  ${GREEN}✓${NC} C build libraries (libdbus, libclang, libxkbcommon) verified."
+
 # Check for Bluetooth
 if command -v bluetoothctl >/dev/null 2>&1; then
     if bluetoothctl show 2>&1 | grep -q "Powered: yes"; then
@@ -77,29 +171,30 @@ else
     echo -e "  ${YELLOW}!${NC} 'bluetoothctl' not found. Bluetooth LE proximity may not be available."
 fi
 
-# Check for uhid kernel support
-if [ ! -c /dev/uhid ]; then
-    echo -e "  ${YELLOW}!${NC} /dev/uhid character device does not exist yet. Attempting to load module..."
+# Check for uhid kernel module support in sysfs (do not rely on static devtmpfs /dev/uhid node)
+if [ ! -d /sys/class/misc/uhid ]; then
+    echo -e "  ${YELLOW}!${NC} uhid kernel module is not loaded. Loading module..."
     sudo modprobe uhid || {
         echo -e "  ${RED}✗ Failed to load uhid kernel module.${NC}"
+        echo -e "  Please ensure your Linux kernel supports CONFIG_UHID."
         exit 1
     }
 fi
-echo -e "  ${GREEN}✓${NC} /dev/uhid kernel interface is available."
+echo -e "  ${GREEN}✓${NC} /dev/uhid kernel interface is active in sysfs."
 
 # 2. Build release binary
 echo -e "\n${BOLD}[2/5] Compiling release binary...${NC}"
-if ! command -v cargo >/dev/null 2>&1; then
-    echo -e "${RED}Error: Cargo is not installed. Please install Rust (https://rustup.rs).${NC}"
-    exit 1
-fi
-
 cd "$SCRIPT_DIR"
 cargo build --release --bin cable-uhid-bridge
 
+# If the user service is currently running, stop it prior to replacing binary to avoid ETXTBSY
+if systemctl --user is-active --quiet cable-uhid-bridge.service 2>/dev/null; then
+    echo -e "  Stopping running service for binary update..."
+    systemctl --user stop cable-uhid-bridge.service || true
+fi
+
 mkdir -p "$BIN_DEST"
-cp "$SCRIPT_DIR/target/release/cable-uhid-bridge" "$BIN_DEST/cable-uhid-bridge"
-chmod +x "$BIN_DEST/cable-uhid-bridge"
+install -m 755 "$SCRIPT_DIR/target/release/cable-uhid-bridge" "$BIN_DEST/cable-uhid-bridge"
 echo -e "  ${GREEN}✓${NC} Installed binary to: ${BOLD}$BIN_DEST/cable-uhid-bridge${NC}"
 
 # 3. Udev rule installation
@@ -116,23 +211,29 @@ if [ "$NEEDS_UDEV_UPDATE" = true ]; then
     echo -e "  Configuring $UDEV_RULE_DEST (requires sudo for udev rules)..."
     sudo cp "$UDEV_RULE_SRC" "$UDEV_RULE_DEST"
     sudo chmod 644 "$UDEV_RULE_DEST"
-    
-    # Ensure module loads automatically on boot
-    if [ ! -f "$MODULES_CONF" ]; then
-        echo "uhid" | sudo tee "$MODULES_CONF" >/dev/null || true
-    fi
+fi
 
-    sudo udevadm control --reload-rules
-    sudo udevadm trigger -s misc -a name=uhid || true
-    echo -e "  ${GREEN}✓${NC} Udev rule installed and reloaded."
+# Ensure module loads automatically on boot
+if [ ! -f "$MODULES_CONF" ] || ! grep -q "^uhid" "$MODULES_CONF" 2>/dev/null; then
+    echo -e "  Configuring automatic module loading on boot ($MODULES_CONF)..."
+    echo "uhid" | sudo tee "$MODULES_CONF" >/dev/null || true
+fi
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger -s misc -a name=uhid || true
+sudo udevadm settle || true
+
+# Test /dev/uhid permissions for current user
+if [ -w /dev/uhid ] && [ -r /dev/uhid ]; then
+    echo -e "  ${GREEN}✓${NC} Udev rule active and /dev/uhid is read/writable by $USER."
 else
-    echo -e "  ${GREEN}✓${NC} Udev rule already properly configured."
+    echo -e "  ${YELLOW}!${NC} Note: /dev/uhid may require a re-login or seat activation for dynamic ACLs."
 fi
 
 # 4. Systemd user service installation
 echo -e "\n${BOLD}[4/5] Installing systemd user service...${NC}"
 mkdir -p "$SERVICE_DEST"
-cp "$SCRIPT_DIR/contrib/cable-uhid-bridge.service" "$SERVICE_DEST/cable-uhid-bridge.service"
+install -m 644 "$SCRIPT_DIR/contrib/cable-uhid-bridge.service" "$SERVICE_DEST/cable-uhid-bridge.service"
 
 systemctl --user daemon-reload
 systemctl --user enable --now cable-uhid-bridge.service
@@ -149,6 +250,7 @@ if systemctl --user is-active --quiet cable-uhid-bridge.service; then
     echo -e "• Passkey requests in Firefox, Chrome, and Edge will now pop up automatically."
     echo -e "• View live service logs with: ${BOLD}journalctl --user -u cable-uhid-bridge -f${NC}"
     echo -e "• Stop the service anytime with: ${BOLD}systemctl --user stop cable-uhid-bridge${NC}"
+    echo -e "• Restart service anytime with: ${BOLD}systemctl --user restart cable-uhid-bridge${NC}"
     echo -e "• Uninstall anytime with: ${BOLD}./install.sh --uninstall${NC}\n"
 else
     echo -e "  ${RED}✗ Service failed to start.${NC}"
