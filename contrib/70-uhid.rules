@@ -1,0 +1,3 @@
+# /etc/udev/rules.d/70-uhid.rules
+# Allow logged-in desktop users access to /dev/uhid for virtual FIDO2 USB token emulation
+KERNEL=="uhid", TAG+="uaccess"

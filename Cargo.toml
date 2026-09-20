@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Chris Sommers <chris.sommers@icloud.com>"]
 description = "Linux virtual USB FIDO2/WebAuthn token bridge for mobile passkeys via caBLE v2 (QR code)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/baseman70/cable-uhid-bridge"
 
 [dependencies]
 uhidrs-sys = "1.0.4"
@@ -18,6 +20,10 @@ anyhow = "1.0"
 ciborium = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 rand = "0.8"
+eframe = "0.36.2"
+qrcode = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 [patch.crates-io]
 webauthn-authenticator-rs = { path = "vendor/webauthn-authenticator-rs" }

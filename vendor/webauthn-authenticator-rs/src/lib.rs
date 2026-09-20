@@ -110,8 +110,6 @@ extern crate num_derive;
 #[macro_use]
 extern crate tracing;
 
-use std::str::FromStr;
-
 use crate::error::WebauthnCError;
 #[cfg(any(
     all(doc, not(doctest)),

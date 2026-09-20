@@ -26,11 +26,24 @@ pub enum DevFlags {
     InputReportsNumbered = 0b0000_0100,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
 pub enum ReportType {
     Feature = 0,
     Output = 1,
     Input = 2,
+}
+
+impl TryFrom<u8> for ReportType {
+    type Error = StreamError;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(ReportType::Feature),
+            1 => Ok(ReportType::Output),
+            2 => Ok(ReportType::Input),
+            _ => Err(StreamError::UnknownEventType(v as u32)),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -113,23 +126,23 @@ impl<'a> From<InputEvent<'a>> for sys::uhid_event {
             }) => {
                 event.type_ = sys::uhid_event_type_UHID_CREATE2;
                 let payload = unsafe { &mut event.u.create2 };
-                name.as_bytes()
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.name[i] = *x);
-                phys.as_bytes()
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.phys[i] = *x);
-                uniq.as_bytes()
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.uniq[i] = *x);
-                rd_data
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.rd_data[i] = *x);
-                payload.rd_size = rd_data.len() as u16;
+
+                let name_bytes = name.as_bytes();
+                let name_len = name_bytes.len().min(payload.name.len());
+                payload.name[..name_len].copy_from_slice(&name_bytes[..name_len]);
+
+                let phys_bytes = phys.as_bytes();
+                let phys_len = phys_bytes.len().min(payload.phys.len());
+                payload.phys[..phys_len].copy_from_slice(&phys_bytes[..phys_len]);
+
+                let uniq_bytes = uniq.as_bytes();
+                let uniq_len = uniq_bytes.len().min(payload.uniq.len());
+                payload.uniq[..uniq_len].copy_from_slice(&uniq_bytes[..uniq_len]);
+
+                let rd_len = rd_data.len().min(payload.rd_data.len());
+                payload.rd_data[..rd_len].copy_from_slice(&rd_data[..rd_len]);
+                payload.rd_size = rd_len as u16;
+
                 payload.bus = bus as u16;
                 payload.vendor = vendor;
                 payload.product = product;
@@ -142,28 +155,25 @@ impl<'a> From<InputEvent<'a>> for sys::uhid_event {
             InputEvent::Input { data } => {
                 event.type_ = sys::uhid_event_type_UHID_INPUT2;
                 let payload = unsafe { &mut event.u.input2 };
-                data.iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.data[i] = *x);
-                payload.size = data.len() as u16;
+                let len = data.len().min(payload.data.len());
+                payload.data[..len].copy_from_slice(&data[..len]);
+                payload.size = len as u16;
             }
             InputEvent::Output { data } => {
                 event.type_ = sys::uhid_event_type_UHID_OUTPUT;
                 let payload = unsafe { &mut event.u.output };
-                data.iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.data[i] = *x);
-                payload.size = data.len() as u16;
+                let len = data.len().min(payload.data.len());
+                payload.data[..len].copy_from_slice(&data[..len]);
+                payload.size = len as u16;
                 payload.rtype = sys::hid_report_type_HID_OUTPUT_REPORT as u8;
             }
             InputEvent::GetReportReply { err, id, data, .. } => {
                 event.type_ = sys::uhid_event_type_UHID_GET_REPORT_REPLY;
                 let payload = unsafe { &mut event.u.get_report_reply };
                 payload.err = err;
-                data.iter()
-                    .enumerate()
-                    .for_each(|(i, x)| payload.data[i] = *x);
-                payload.size = data.len() as u16;
+                let len = data.len().min(payload.data.len());
+                payload.data[..len].copy_from_slice(&data[..len]);
+                payload.size = len as u16;
                 payload.id = id;
             }
             InputEvent::SetReportReply { err, id, .. } => {
@@ -212,37 +222,33 @@ impl TryFrom<sys::uhid_event> for OutputEvent {
                 sys::uhid_event_type_UHID_STOP => Ok(OutputEvent::Stop),
                 sys::uhid_event_type_UHID_OPEN => Ok(OutputEvent::Open),
                 sys::uhid_event_type_UHID_CLOSE => Ok(OutputEvent::Close),
-                sys::uhid_event_type_UHID_OUTPUT => Ok(unsafe {
-                    let payload: &sys::uhid_output_req = &event.u.output;
-                    OutputEvent::Output {
-                        data: slice::from_raw_parts(
-                            &payload.data[0] as *const u8,
-                            payload.size as usize,
-                        )
-                        .to_vec(),
-                    }
-                }),
-                sys::uhid_event_type_UHID_GET_REPORT => Ok(unsafe {
-                    let payload = &event.u.get_report;
-                    OutputEvent::GetReport {
+                sys::uhid_event_type_UHID_OUTPUT => {
+                    let payload = unsafe { &event.u.output };
+                    let max_len = payload.data.len();
+                    let size = (payload.size as usize).min(max_len);
+                    Ok(OutputEvent::Output {
+                        data: payload.data[..size].to_vec(),
+                    })
+                }
+                sys::uhid_event_type_UHID_GET_REPORT => {
+                    let payload = unsafe { &event.u.get_report };
+                    Ok(OutputEvent::GetReport {
                         id: payload.id,
                         report_number: payload.rnum,
-                        report_type: mem::transmute::<u8, ReportType>(payload.rtype),
-                    }
-                }),
-                sys::uhid_event_type_UHID_SET_REPORT => Ok(unsafe {
-                    let payload = &event.u.set_report;
-                    OutputEvent::SetReport {
+                        report_type: ReportType::try_from(payload.rtype)?,
+                    })
+                }
+                sys::uhid_event_type_UHID_SET_REPORT => {
+                    let payload = unsafe { &event.u.set_report };
+                    let max_len = payload.data.len();
+                    let size = (payload.size as usize).min(max_len);
+                    Ok(OutputEvent::SetReport {
                         id: payload.id,
                         report_number: payload.rnum,
-                        report_type: mem::transmute::<u8, ReportType>(payload.rtype),
-                        data: slice::from_raw_parts(
-                            &payload.data[0] as *const u8,
-                            payload.size as usize,
-                        )
-                        .to_vec(),
-                    }
-                }),
+                        report_type: ReportType::try_from(payload.rtype)?,
+                        data: payload.data[..size].to_vec(),
+                    })
+                }
                 _ => Err(StreamError::UnknownEventType(event.type_)),
             }
         } else {
@@ -254,7 +260,8 @@ impl TryFrom<sys::uhid_event> for OutputEvent {
 impl TryFrom<[u8; UHID_EVENT_SIZE]> for OutputEvent {
     type Error = StreamError;
     fn try_from(src: [u8; UHID_EVENT_SIZE]) -> Result<Self, Self::Error> {
-        OutputEvent::try_from(unsafe { *(src.as_ptr() as *const sys::uhid_event) })
+        let event: sys::uhid_event = unsafe { std::ptr::read_unaligned(src.as_ptr() as *const sys::uhid_event) };
+        OutputEvent::try_from(event)
     }
 }
 
@@ -270,9 +277,22 @@ pub struct UHIDDevice<T: Read + Write> {
 }
 
 impl<T: Read + Write> UHIDDevice<T> {
+    pub fn from_handle(handle: T) -> Self {
+        Self { handle }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.handle
+    }
+
+    pub fn handle(&self) -> &T {
+        &self.handle
+    }
+
     pub fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let event: [u8; UHID_EVENT_SIZE] = InputEvent::Input { data }.into();
-        self.handle.write(&event)
+        self.handle.write_all(&event)?;
+        Ok(event.len())
     }
 
     pub fn read(&mut self) -> Result<OutputEvent, StreamError> {
@@ -285,7 +305,8 @@ impl<T: Read + Write> UHIDDevice<T> {
 
     pub fn destroy(&mut self) -> io::Result<usize> {
         let event: [u8; UHID_EVENT_SIZE] = InputEvent::Destroy.into();
-        self.handle.write(&event)
+        self.handle.write_all(&event)?;
+        Ok(event.len())
     }
 }
 
@@ -348,4 +369,96 @@ pub fn create_fido_hid() -> io::Result<UHIDDevice<File>> {
         country: 0,
         rd_data: fido_report_descriptor(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_report_type_try_from() {
+        assert_eq!(ReportType::try_from(0).unwrap(), ReportType::Feature);
+        assert_eq!(ReportType::try_from(1).unwrap(), ReportType::Output);
+        assert_eq!(ReportType::try_from(2).unwrap(), ReportType::Input);
+        assert!(ReportType::try_from(3).is_err());
+        assert!(ReportType::try_from(255).is_err());
+    }
+
+    #[test]
+    fn test_input_event_oversized_string_does_not_panic() {
+        let huge_name = "A".repeat(500);
+        let huge_phys = "B".repeat(500);
+        let huge_uniq = "C".repeat(500);
+        let huge_rd = vec![0xFF; 10000];
+
+        let event: sys::uhid_event = InputEvent::Create(CreateParams {
+            name: huge_name,
+            phys: huge_phys,
+            uniq: huge_uniq,
+            bus: Bus::USB,
+            vendor: 0x1234,
+            product: 0x5678,
+            version: 1,
+            country: 0,
+            rd_data: huge_rd,
+        }).into();
+
+        let ev_type = event.type_;
+        assert_eq!(ev_type, sys::uhid_event_type_UHID_CREATE2);
+        unsafe {
+            let rd_size = event.u.create2.rd_size;
+            assert_eq!(rd_size, 4096);
+        }
+    }
+
+    #[test]
+    fn test_input_event_oversized_data_does_not_panic() {
+        let huge_data = vec![0x42; 8000];
+        let event: sys::uhid_event = InputEvent::Input { data: &huge_data }.into();
+        let ev_type = event.type_;
+        assert_eq!(ev_type, sys::uhid_event_type_UHID_INPUT2);
+        unsafe {
+            let sz = event.u.input2.size;
+            assert_eq!(sz, 4096);
+        }
+    }
+
+    #[test]
+    fn test_output_event_from_raw_bytes_unaligned() {
+        let mut raw = [0u8; UHID_EVENT_SIZE];
+        // Set type to UHID_OPEN
+        let type_bytes = sys::uhid_event_type_UHID_OPEN.to_ne_bytes();
+        raw[..type_bytes.len()].copy_from_slice(&type_bytes);
+
+        let event = OutputEvent::try_from(raw).unwrap();
+        assert!(matches!(event, OutputEvent::Open));
+    }
+
+    #[test]
+    fn test_output_event_clamps_oversized_payload_size() {
+        let mut raw = [0u8; UHID_EVENT_SIZE];
+        // Set type to UHID_OUTPUT
+        let type_bytes = sys::uhid_event_type_UHID_OUTPUT.to_ne_bytes();
+        raw[..type_bytes.len()].copy_from_slice(&type_bytes);
+
+        // In sys::uhid_event, u.output is at offset 4 (or 8 depending on arch alignment)
+        let mut event: sys::uhid_event = unsafe { std::mem::zeroed() };
+        event.type_ = sys::uhid_event_type_UHID_OUTPUT;
+        unsafe {
+            event.u.output.size = 60000; // Far larger than payload.data (4096)
+            event.u.output.data[0] = 0xAA;
+            event.u.output.data[4095] = 0xBB;
+        }
+
+        let parsed = OutputEvent::try_from(event).unwrap();
+        match parsed {
+            OutputEvent::Output { data } => {
+                // Must be clamped to max data len (4096) without memory error!
+                assert_eq!(data.len(), 4096);
+                assert_eq!(data[0], 0xAA);
+                assert_eq!(data[4095], 0xBB);
+            }
+            _ => panic!("Expected OutputEvent::Output"),
+        }
+    }
 }

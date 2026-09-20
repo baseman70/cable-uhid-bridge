@@ -1,0 +1,15 @@
+[Unit]
+Description=FIDO2 Virtual USB Passkey Token caBLE Bridge
+Documentation=https://github.com/baseman70/cable-uhid-bridge
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/cable-uhid-bridge
+Restart=on-failure
+RestartSec=3s
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=graphical-session.target

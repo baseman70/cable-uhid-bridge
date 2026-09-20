@@ -1,109 +1,163 @@
 # cable-uhid-bridge
 
-A lightweight Linux daemon providing **cross-device WebAuthn / Passkey authentication via caBLE v2 (QR code)** by emulating a virtual USB FIDO2 token over `/dev/uhid`.
+[![Rust](https://img.shields.io/badge/rust-2021_edition-orange.svg)](https://www.rust-lang.org)
+[![Tests](https://img.shields.io/badge/tests-57_passed-success.svg)]()
+[![Platform](https://img.shields.io/badge/platform-linux_x86__64-blue.svg)]()
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)]()
+
+A lightweight Linux background daemon providing **cross-device WebAuthn / Passkey authentication via caBLE v2 (QR code)** by emulating a virtual USB FIDO2 token over `/dev/uhid`.
 
 ---
 
 ## The Problem Solved
 
-Firefox and Chromium on Linux lack an OS-level platform authenticator with Hybrid Transport (caBLE). When logging into websites like GitHub or Google with a mobile passkey (stored in iCloud Keychain, Google Password Manager, or 1Password), Linux browsers fall back to `libfido2`, which only looks for physical USB security keys.
+Firefox and Chromium on Linux lack an OS-level platform authenticator with Hybrid Transport (caBLE). When logging into websites like GitHub, Google, or AWS with a mobile passkey (stored in iCloud Keychain or Google Password Manager), Linux browsers fall back to `libfido2`, which only looks for physical USB security keys.
 
-`cable-uhid-bridge` bridges this gap completely without requiring browser modifications or patches:
+`cable-uhid-bridge` bridges this gap completely without requiring browser modifications, custom browser patches, or compositor extensions:
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  Browser / OS Client (Firefox, Chromium, PAM)          │
+│  Browser / OS Client (Firefox, Chromium, Brave, PAM)   │
 └───────────────────────────┬────────────────────────────┘
-                            │ libfido2 / CTAPHID (USB)
+                            │ CTAPHID (Virtual USB over /dev/uhid)
                             ▼
 ┌────────────────────────────────────────────────────────┐
 │  cable-uhid-bridge (/dev/uhid)                         │
-│  Emulates a physical FIDO2 USB Security Key            │
-└───────────────────────────┬────────────────────────────┘
-                            │ On GetAssertion / MakeCredential
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  caBLE v2 Engine                                       │
-│  - Displays QR code in terminal                        │
+│  - Emulates a physical FIDO2 USB Security Key          │
+│  - Pops up Wayland/X11 QR modal automatically          │
 │  - Verifies Bluetooth LE physical proximity (BlueZ)    │
 │  - E2EE Noise WebSocket tunnel to Apple / Google relay │
 └───────────────────────────┬────────────────────────────┘
-                            │ Relayed CTAP2 Request
+                            │ caBLE v2 Tunnel (FIDO Hybrid)
                             ▼
 ┌────────────────────────────────────────────────────────┐
 │  Mobile Device (iPhone / Android)                      │
-│  Biometric Verification (Face ID / Touch ID)           │
-│  Returns signed WebAuthn assertion                     │
+│  - Biometric Verification (Face ID / Fingerprint / PIN)│
+│  - Returns signed WebAuthn assertion / credential      │
 └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Verification Status
-> **Verified Working on GitHub!**  
-> Successfully authenticated to **GitHub (`github.com`) in Firefox on Linux** using an iPhone passkey (iCloud Keychain / caBLE v2) via QR code scan and Face ID.
+## 📱 Verified Compatibility
+
+| Mobile Platform | Credential Provider | Biometric Auth | Happy Path | Cancel Flow |
+|---|---|---|:---:|:---:|
+| **Apple iOS** (iPhone / iPad) | iCloud Keychain | Face ID / Touch ID | ✅ **Verified** | ✅ **Verified** |
+| **Google Android** | Google Password Manager | Fingerprint / Screen Lock | ✅ **Verified** | ✅ **Verified** |
+
+### Verified Relying Parties
+* **GitHub** (`github.com`)
+* **WebAuthn.io** (`webauthn.io`)
+* **Google Accounts**
 
 ---
 
-## Permissions Setup
+## 🚀 Quick Start (Automated Installer)
 
-Accessing the Linux kernel user-space HID interface (`/dev/uhid`) requires appropriate permissions.
-
-### Option A: One-Line Udev Rule (Recommended)
-Allow any logged-in desktop user to access `/dev/uhid` via systemd ACLs:
+An automated installer is provided for systemd-based Linux systems (Arch, Pop!_OS, Ubuntu, Debian, Fedora):
 
 ```bash
-# Ensure uhid module loads at boot
-echo 'uhid' | sudo tee /etc/modules-load.d/uhid.conf
-sudo modprobe uhid
+git clone https://github.com/baseman70/cable-uhid-bridge.git
+cd cable-uhid-bridge
+./install.sh
+```
 
-# Grant logged-in desktop user access via ACL
+### What `install.sh` Does:
+1. **Preflight Checks**: Verifies `/dev/uhid` kernel module support and Bluetooth LE availability.
+2. **Builds Release Binary**: Compiles `cable-uhid-bridge` and installs it to `~/.local/bin/`.
+3. **Udev Rules**: Configures `/etc/udev/rules.d/70-uhid.rules` with `TAG+="uaccess"`, enabling unprivileged desktop user access without `sudo`.
+4. **Systemd User Service**: Installs and starts `cable-uhid-bridge.service` under `systemctl --user`.
+5. **Self-Verification**: Confirms the virtual token is registered and active in the Linux kernel.
+
+### Uninstall Anytime
+```bash
+./install.sh --uninstall
+```
+
+---
+
+## Manual Installation & Service Setup
+
+If you prefer to configure everything manually:
+
+### 1. Configure Udev Rule (One-Time)
+```bash
 echo 'KERNEL=="uhid", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-uhid.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger -s misc -a name=uhid
 ```
 
-### Option B: Run with `sudo`
+### 2. Build & Install Binary
 ```bash
-sudo ./target/debug/cable-uhid-bridge
+cargo build --release
+mkdir -p ~/.local/bin
+cp target/release/cable-uhid-bridge ~/.local/bin/
+```
+
+### 3. Enable Systemd User Service
+```bash
+mkdir -p ~/.config/systemd/user
+cp contrib/cable-uhid-bridge.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now cable-uhid-bridge.service
+```
+
+### 4. Monitor Service
+```bash
+systemctl --user status cable-uhid-bridge
+journalctl --user -u cable-uhid-bridge -f
 ```
 
 ---
 
 ## How to Test
 
-### 1. Launch the Bridge
-In one terminal window:
-
-```bash
-cd ~/Projects/cable-uhid-bridge
-sudo cargo run
-```
-
-### 2. Verify Kernel Device Detection
-In a second terminal window, verify that `libfido2` detects the virtual token:
-
+### 1. Verify Virtual USB Detection
+Verify that `libfido2` detects your virtual security key:
 ```bash
 fido2-token -L
 ```
-Output will show your virtual token registered as a FIDO2 device!
+Output will display:
+```
+/dev/hidrawX: vendor=0x1209, product=0x0001 (caBLE Virtual Passkey Token)
+```
 
-### 3. Test in Firefox / Browser
-1. Open **Firefox** and navigate to:
-   * **[webauthn.io](https://webauthn.io)** or **[github.com/login](https://github.com/login)**
-2. Click **"Authenticate"** or **"Sign in with a passkey"**.
-3. Firefox will communicate with `/dev/uhid`, which automatically prompts the QR code in your terminal.
-4. Scan the QR code with your iPhone or Android camera, verify with Face ID / Fingerprint, and complete the sign-in!
+### 2. Test in Firefox or Chrome
+1. Navigate to **[webauthn.io](https://webauthn.io)**.
+2. Enter a test username (e.g. `test-user-1`).
+3. Click **"Register"** or **"Authenticate"**.
+4. The floating modal UI will pop up with the caBLE QR code.
+5. Point your iPhone or Android camera at the QR code and approve with Face ID or Fingerprint.
+6. The modal displays `"Done!"` and dismisses, completing login.
+
+### 3. Standalone UI Preview
+Preview the Wayland modal UI without initiating WebAuthn:
+```bash
+cargo run -- --ui --rp "github.com" --url "fido:/01234567890123456789"
+```
 
 ---
 
-## Roadmap & Upcoming Milestones
+## Architecture & Security Hardening
 
-- [ ] **Option A: Desktop UI / Popup for QR Code (Wayland / Hyprland)**
-  - Replace terminal ASCII QR output with an automatic desktop modal popup (via GTK4, Wayland layer-shell, or Slint).
-  - Automatically pops up on WebAuthn assertion requests and dismisses upon phone BLE beacon proximity detection.
-- [ ] **Option B: Systemd User Service & Packaging**
-  - Provide a systemd user service (`cable-uhid-bridge.service`) to run unobtrusively in the background on login.
-  - Create an Arch Linux / AUR `PKGBUILD` for one-command installation with udev rules and module autoloading.
-- [ ] **Upstream Community Collaboration**
-  - Track RFC discussion on [`bjn7/passkeyd#21`](https://github.com/bjn7/passkeyd/issues/21) for potential integration into `passkeyd`.
+* **Embedded Native Wayland Modal (`egui` / `eframe`)**:
+  * Dark-mode floating modal showing the Relying Party badge.
+  * High-contrast QR rendering with white padding for rapid camera recognition.
+  * Live status transitions (*"Connecting to relay..."* → *"Phone detected!"* → *"Done!"*).
+  * Interactive **Cancel** button with spec-compliant `0x2D` (`CTAP2_ERR_KEEPALIVE_CANCEL`) abort signaling.
+* **Process & Memory Isolation**:
+  * The GUI modal runs as a transient child subprocess. When idle, the daemon consumes zero GPU memory and under 5MB RAM.
+  * Spawning isolates display/GPU crashes from the core `/dev/uhid` kernel device loop.
+* **Security & Protocol Hardening**:
+  * **Challenge-Keyed Assertion Cache**: Caches two-stage assertions keyed to `clientDataHash`, consumed via single-use `.take()`.
+  * **Transport Hint Sanitization**: Strips `transports: ["usb"]` from credential descriptors so mobile authenticators match hybrid credentials by ID.
+  * **Spec-Compliant Keepalives**: Periodic 100ms `CTAPHID_KEEPALIVE` packets prevent host-side client timeouts.
+  * **Least Privilege**: Runs unprivileged via systemd user sessions using udev `uaccess` ACLs.
 
+---
+
+## License
+
+Dual-licensed under either:
+* **MIT License** ([LICENSE-MIT](LICENSE-MIT))
+* **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))

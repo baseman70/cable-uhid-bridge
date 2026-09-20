@@ -131,6 +131,7 @@ pub struct Tunnel {
     stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
     crypter: Crypter,
     info: GetInfoResponse,
+    pub protocol_version: u32,
 }
 
 impl Tunnel {
@@ -165,7 +166,57 @@ impl Tunnel {
 
         Ok((stream, routing_id))
     }
+}
 
+fn detect_protocol_version(decrypted: &[u8]) -> u32 {
+    let len = decrypted.len();
+    // 16-bit padding check (Chromium DecodePaddedCBORMap16)
+    if len >= 2 {
+        let pad_len = u16::from_le_bytes([decrypted[len - 2], decrypted[len - 1]]) as usize;
+        if pad_len > 0 && pad_len + 2 < len {
+            let pad_slice = &decrypted[len - 2 - pad_len..len - 2];
+            if pad_slice.iter().all(|&b| b == 0) {
+                info!(
+                    "caBLE post-handshake: detected v2.0 (revision 0) via 16-bit padding (pad_len={}, total={})",
+                    pad_len, len
+                );
+                return 0;
+            }
+        }
+    }
+
+    // 8-bit padding check (Chromium DecodePaddedCBORMap8)
+    if len >= 1 {
+        let pad_len = decrypted[len - 1] as usize;
+        if pad_len > 0 && pad_len + 1 < len {
+            let pad_slice = &decrypted[len - 1 - pad_len..len - 1];
+            if pad_slice.iter().all(|&b| b == 0) {
+                info!(
+                    "caBLE post-handshake: detected v2.0 (revision 0) via 8-bit padding (pad_len={}, total={})",
+                    pad_len, len
+                );
+                return 0;
+            }
+        }
+    }
+
+    // 512-byte block alignment check (kPostHandshakeMsgPaddingGranularity)
+    if len >= 512 && len % 512 == 0 {
+        info!(
+            "caBLE post-handshake: detected v2.0 (revision 0) via 512-byte block alignment (total={})",
+            len
+        );
+        return 0;
+    }
+
+    info!(
+        "caBLE post-handshake: detected v2.1 (revision 1) unpadded (total={})",
+        len
+    );
+    1
+}
+
+impl Tunnel {
     pub async fn connect_initiator(
         uri: &Uri,
         psk: Psk,
@@ -189,31 +240,57 @@ impl Tunnel {
         // Handshake sent, get response
         ui.cable_status_update(CableState::WaitingForAuthenticatorResponse);
         trace!("Waiting for handshake response...");
-        let resp = stream.next().await.ok_or(WebauthnCError::Closed)??;
+        let resp = loop {
+            match stream.next().await {
+                None => return Err(WebauthnCError::Closed),
+                Some(Ok(Message::Binary(v))) => break v,
+                Some(Ok(Message::Ping(p))) => {
+                    let _ = stream.send(Message::Pong(p)).await;
+                }
+                Some(Ok(Message::Pong(_))) => continue,
+                Some(Ok(Message::Close(_))) => return Err(WebauthnCError::Closed),
+                Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed))
+                | Some(Err(tokio_tungstenite::tungstenite::Error::AlreadyClosed)) => {
+                    return Err(WebauthnCError::Closed);
+                }
+                Some(Err(e)) => return Err(e.into()),
+                Some(Ok(other)) => {
+                    error!("Unexpected websocket response type: {:?}", other);
+                    return Err(WebauthnCError::Unknown);
+                }
+            }
+        };
 
         ui.cable_status_update(CableState::Handshaking);
-        let mut crypter = if let Message::Binary(v) = resp {
-            trace!("<!< {}", hex::encode(&v));
-            noise.process_response(&v)?
-        } else {
-            error!("Unexpected websocket response type");
-            return Err(WebauthnCError::Unknown);
-        };
+        trace!("<!< {}", hex::encode(&resp));
+        let mut crypter = noise.process_response(&resp)?;
 
         // Waiting for post-handshake message
         ui.cable_status_update(CableState::WaitingForAuthenticatorResponse);
         trace!("Waiting for post-handshake message...");
-        let resp = stream.next().await.ok_or(WebauthnCError::Closed)??;
+        let resp = loop {
+            match stream.next().await {
+                None => return Err(WebauthnCError::Closed),
+                Some(Ok(Message::Binary(v))) => break v,
+                Some(Ok(Message::Ping(p))) => {
+                    let _ = stream.send(Message::Pong(p)).await;
+                }
+                Some(Ok(Message::Pong(_))) => continue,
+                Some(Ok(Message::Close(_))) => return Err(WebauthnCError::Closed),
+                Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed))
+                | Some(Err(tokio_tungstenite::tungstenite::Error::AlreadyClosed)) => {
+                    return Err(WebauthnCError::Closed);
+                }
+                Some(Err(e)) => return Err(e.into()),
+                Some(Ok(other)) => {
+                    error!("Unexpected websocket response type: {:?}", other);
+                    return Err(WebauthnCError::Unknown);
+                }
+            }
+        };
         ui.cable_status_update(CableState::Handshaking);
 
-        let mut v = if let Message::Binary(v) = resp {
-            trace!("<!< {}", hex::encode(&v));
-            Zeroizing::new(v.to_vec())
-        } else {
-            error!("Unexpected websocket response type");
-            return Err(WebauthnCError::Unknown);
-        };
-
+        let mut v = Zeroizing::new(resp.to_vec());
         let len = crypter.decrypt(&mut v)?;
         trace!("<<< {}", hex::encode(&v[..len]));
 
@@ -228,6 +305,8 @@ impl Tunnel {
         //
         // [0]: https://source.chromium.org/chromium/chromium/src/+/main:chrome/android/features/cablev2_authenticator/native/cablev2_authenticator_android.cc;l=688-693;drc=9d8024e69625a0c457a4999f4d1aca32c24eb494
         // [1]: https://source.chromium.org/chromium/chromium/src/+/main:device/fido/cable/fido_tunnel_device.cc;l=368-375;drc=52fa5a7f263b37149bcfbac06da00fec5abcc416
+        let protocol_version = detect_protocol_version(&v[..len]);
+
         let v: BTreeMap<u32, Value> =
             serde_cbor_2::from_slice(&v[..len]).map_err(|_| WebauthnCError::Cbor)?;
 
@@ -241,6 +320,7 @@ impl Tunnel {
             stream,
             crypter,
             info,
+            protocol_version,
         };
 
         Ok(t)
@@ -312,6 +392,7 @@ impl Tunnel {
             stream,
             crypter,
             info,
+            protocol_version: 1,
         };
 
         t.send_raw(&phm).await?;
@@ -345,22 +426,58 @@ impl Tunnel {
     }
 
     pub(super) async fn recv(&mut self) -> Result<Option<CableFrame>, WebauthnCError> {
-        let resp = match self.stream.next().await {
-            None => return Ok(None),
-            Some(r) => r?,
-        };
+        loop {
+            let resp = match self.stream.next().await {
+                None => {
+                    info!("caBLE tunnel WebSocket stream ended (None)");
+                    return Ok(None);
+                }
+                Some(Ok(msg)) => msg,
+                Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed))
+                | Some(Err(tokio_tungstenite::tungstenite::Error::AlreadyClosed)) => {
+                    info!("caBLE tunnel WebSocket connection closed by remote peer");
+                    return Ok(None);
+                }
+                Some(Err(e)) => {
+                    info!("caBLE tunnel WebSocket error: {:?}", e);
+                    return Err(e.into());
+                }
+            };
 
-        let mut resp = if let Message::Binary(v) = resp {
-            Zeroizing::new(v.to_vec())
-        } else {
-            error!("Incorrect message type");
-            return Err(WebauthnCError::Unknown);
-        };
-
-        trace!("<!< {}", hex::encode(&resp));
-        let len = self.crypter.decrypt(&mut resp)?;
-        // TODO: protocol version
-        Ok(Some(CableFrame::from_bytes(1, &resp[..len])))
+            match resp {
+                Message::Binary(v) => {
+                    let mut resp = Zeroizing::new(v.to_vec());
+                    trace!("<!< {}", hex::encode(&resp));
+                    let len = self.crypter.decrypt(&mut resp)?;
+                    if len == 0 {
+                        info!("Empty caBLE message received from peer (Shutdown)");
+                        return Ok(Some(CableFrame {
+                            protocol_version: self.protocol_version,
+                            message_type: CableFrameType::Shutdown,
+                            data: vec![],
+                        }));
+                    }
+                    let frame = CableFrame::from_bytes(self.protocol_version, &resp[..len]);
+                    debug!("caBLE received frame: {:?}", frame.message_type);
+                    return Ok(Some(frame));
+                }
+                Message::Close(reason) => {
+                    info!("caBLE tunnel closed by remote peer: {:?}", reason);
+                    return Ok(None);
+                }
+                Message::Ping(p) => {
+                    let _ = self.stream.send(Message::Pong(p)).await;
+                    continue;
+                }
+                Message::Pong(_) => {
+                    continue;
+                }
+                _ => {
+                    error!("Incorrect message type: {:?}", resp);
+                    return Err(WebauthnCError::Unknown);
+                }
+            }
+        }
     }
 
     pub async fn transmit_cbor<U: UiCallback>(&mut self, cbor: &[u8], ui: &U) -> Result<Vec<u8>, WebauthnCError> {
@@ -388,9 +505,14 @@ impl Token for Tunnel {
     where
         U: UiCallback,
     {
+        info!(
+            "caBLE tunnel: transmitting raw CTAP command (len={}, protocol_version={}): hex={}",
+            cbor.len(),
+            self.protocol_version,
+            hex::encode(cbor)
+        );
         let f = CableFrame {
-            // TODO: handle protocol versions
-            protocol_version: 1,
+            protocol_version: self.protocol_version,
             message_type: CableFrameType::Ctap,
             data: cbor.to_vec(),
         };
@@ -401,21 +523,26 @@ impl Token for Tunnel {
                 Some(r) => r,
                 None => {
                     // end of stream
-                    self.close().await?;
                     return Err(WebauthnCError::Closed);
                 }
             };
 
             if resp.message_type == CableFrameType::Ctap {
+                info!("caBLE received CTAP response from peer (len={})", resp.data.len());
                 break resp.data;
+            } else if resp.message_type == CableFrameType::Shutdown {
+                info!("caBLE peer sent shutdown frame (cancelled on mobile device)");
+                return Err(WebauthnCError::Closed);
             } else {
                 // TODO: handle these.
                 warn!("unhandled message type: {:?}", resp);
             }
         };
-        self.close().await?;
         ui.cable_status_update(CableState::Processing);
 
+        if data.is_empty() {
+            return Err(WebauthnCError::Closed);
+        }
         let err = CtapError::from(data.remove(0));
         if !err.is_ok() {
             return Err(err.into());
