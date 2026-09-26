@@ -215,12 +215,28 @@ If you have a physical YubiKey or Titan Key plugged in simultaneously:
 * **Scanning the QR code on your phone** fulfills the login via passkey and dismisses the physical key prompt.
 * Neither device conflicts with or locks the other.
 
+### Tiling Window Managers (Hyprland, Sway, i3)
+Dynamic tiling compositors automatically tile new windows into the active workspace by default. To ensure the authentication modal opens as a centered floating dialog rather than a tiled pane:
+
+* **Hyprland** (in `~/.config/hypr/hyprland.conf` or Lua config):
+  ```ini
+  windowrulev2 = float, class:^(cable-uhid-bridge)$
+  windowrulev2 = center, class:^(cable-uhid-bridge)$
+  ```
+  *(In Omarchy: `o.window("cable-uhid-bridge", { tag = "+floating-window" })`)*
+
+* **Sway / i3** (in `~/.config/sway/config` or `~/.config/i3/config`):
+  ```ini
+  for_window [app_id="cable-uhid-bridge"] floating enable, move position center
+  ```
+
 ### Running in Foreground Debug Mode
 To inspect incoming packets or troubleshoot WebAuthn interactions directly:
 ```bash
 systemctl --user stop cable-uhid-bridge
 RUST_LOG=trace cable-uhid-bridge
 ```
+
 
 ---
 
