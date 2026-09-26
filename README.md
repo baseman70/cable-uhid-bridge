@@ -191,6 +191,38 @@ cargo run -- --ui --rp "github.com" --url "fido:/01234567890123456789"
 
 ---
 
+## Troubleshooting & FAQ
+
+### Ubuntu Snap Browsers (Firefox & Chromium)
+On Ubuntu 24.04 and later, Firefox and Chromium are packaged as sandboxed Snaps. By default, Snap confinement restricts access to `/dev/hidraw*` security keys.
+
+If your browser prompts *"Touch your security key"* but the bridge window does not appear:
+1. Connect the `u2f-devices` interface:
+   ```bash
+   sudo snap connect firefox:u2f-devices
+   # or for Chromium:
+   sudo snap connect chromium:u2f-devices
+   ```
+2. Restart the browser.
+
+*(Native `.deb` packages installed via APT, Flatpaks with device permissions, and native Arch/Fedora RPMs do not require this step.)*
+
+### Coexistence with Physical USB Security Keys
+If you have a physical YubiKey or Titan Key plugged in simultaneously:
+* Both devices coexist seamlessly. The browser queries all connected security keys.
+* **Touching your physical key** fulfills the login instantly and dismisses the bridge.
+* **Scanning the QR code on your phone** fulfills the login via passkey and dismisses the physical key prompt.
+* Neither device conflicts with or locks the other.
+
+### Running in Foreground Debug Mode
+To inspect incoming packets or troubleshoot WebAuthn interactions directly:
+```bash
+systemctl --user stop cable-uhid-bridge
+RUST_LOG=trace cable-uhid-bridge
+```
+
+---
+
 ## Architecture & Security Hardening
 
 * **Embedded Native Wayland Modal (`egui` / `eframe`)**:

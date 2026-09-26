@@ -317,6 +317,20 @@ systemctl --user daemon-reload
 systemctl --user enable --now cable-uhid-bridge.service
 echo -e "  ${GREEN}✓${NC} Service enabled and started: ${BOLD}cable-uhid-bridge.service${NC}"
 
+# Check for Snap browser confinement (Ubuntu / Snap environments)
+if command -v snap >/dev/null 2>&1; then
+    for snap_app in firefox chromium brave; do
+        if snap list "$snap_app" >/dev/null 2>&1; then
+            if snap connections "$snap_app" 2>/dev/null | awk '$1=="u2f-devices" { if ($3 == "-") exit 0; else exit 1 }'; then
+                echo -e "  ${YELLOW}!${NC} Detected Snap browser: ${BOLD}$snap_app${NC} (sandboxed)"
+                echo -e "    Ubuntu Snap blocks access to /dev/hidraw security keys by default."
+                echo -e "    To allow $snap_app to use virtual USB passkeys, run:"
+                echo -e "      ${BOLD}sudo snap connect ${snap_app}:u2f-devices${NC}"
+            fi
+        fi
+    done
+fi
+
 # 5. Health verification
 echo -e "\n${BOLD}[5/5] Verifying service status...${NC}"
 sleep 1
