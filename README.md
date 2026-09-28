@@ -194,19 +194,35 @@ cargo run -- --ui --rp "github.com" --url "fido:/01234567890123456789"
 
 ## Troubleshooting & FAQ
 
-### Ubuntu Snap Browsers (Firefox & Chromium)
-On Ubuntu 24.04 and later, Firefox and Chromium are packaged as sandboxed Snaps. By default, Snap confinement restricts access to `/dev/hidraw*` security keys.
+### Ubuntu Snap Browsers (Firefox & Chromium Confinement Limitation)
+On Ubuntu, default installations of Firefox and Chromium are packaged as sandboxed **Snaps**. 
 
-If your browser prompts *"Touch your security key"* but the bridge window does not appear:
-1. Connect the `u2f-devices` interface:
-   ```bash
-   sudo snap connect firefox:u2f-devices
-   # or for Chromium:
-   sudo snap connect chromium:u2f-devices
-   ```
-2. Restart the browser.
+Currently, Snap's confinement architecture restricts access to virtual HID devices created via `/dev/uhid`:
+1. **Device Cgroups**: Snap's device cgroup controller restricts `/dev/hidraw*` devices based on physical USB bus attributes (`ATTRS{idVendor}`), which virtual `/dev/uhid` nodes do not have.
+2. **AppArmor**: Snap's `u2f-devices` AppArmor profile restricts sysfs report descriptors to `/sys/devices/**/usb*` and `/sys/devices/**/i2c*`, denying access to `/sys/devices/virtual/...`.
 
-*(Native `.deb` packages installed via APT, Flatpaks with device permissions, and native Arch/Fedora RPMs do not require this step.)*
+As a result, connecting `sudo snap connect <browser>:u2f-devices` is not sufficient for `/dev/uhid` virtual tokens, and Snap browsers will prompt *"Touch your security key"* without passing CTAPHID packets to the bridge.
+
+#### Recommended Solution: Use Native Browser Packages
+Native (non-Snap) packages talk directly to the Linux kernel without sandbox restrictions:
+
+* **Native Firefox (`.deb`)** via Mozilla's official APT repository:
+  ```bash
+  sudo install -d -m 0755 /etc/apt/keyrings
+  wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
+  echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | sudo tee -a /etc/apt/sources.list.d/mozilla.list > /dev/null
+  echo -e 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000' | sudo tee /etc/apt/preferences.d/mozilla
+  sudo apt-get update && sudo apt-get install firefox
+  ```
+
+* **Google Chrome (`.deb`)**:
+  ```bash
+  wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+  sudo dpkg -i google-chrome-stable_current_amd64.deb
+  ```
+
+* **Brave / Edge**: Use the official native `.deb` repositories.
+* **Arch Linux / Fedora**: Standard native packages (`pacman`, `dnf`) work out of the box.
 
 ### Coexistence with Physical USB Security Keys
 If you have a physical YubiKey or Titan Key plugged in simultaneously:

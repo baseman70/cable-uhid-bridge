@@ -319,16 +319,18 @@ echo -e "  ${GREEN}✓${NC} Service enabled and started: ${BOLD}cable-uhid-bridg
 
 # Check for Snap browser confinement (Ubuntu / Snap environments)
 if command -v snap >/dev/null 2>&1; then
-    for snap_app in firefox chromium brave; do
+    snap_browsers_found=()
+    for snap_app in firefox chromium; do
         if snap list "$snap_app" >/dev/null 2>&1; then
-            if snap connections "$snap_app" 2>/dev/null | awk '$1=="u2f-devices" { if ($3 == "-") exit 0; else exit 1 }'; then
-                echo -e "  ${YELLOW}!${NC} Detected Snap browser: ${BOLD}$snap_app${NC} (sandboxed)"
-                echo -e "    Ubuntu Snap blocks access to /dev/hidraw security keys by default."
-                echo -e "    To allow $snap_app to use virtual USB passkeys, run:"
-                echo -e "      ${BOLD}sudo snap connect ${snap_app}:u2f-devices${NC}"
-            fi
+            snap_browsers_found+=("$snap_app")
         fi
     done
+    if [ ${#snap_browsers_found[@]} -gt 0 ]; then
+        echo -e "  ${YELLOW}!${NC} Detected Snap-sandboxed browser(s): ${BOLD}${snap_browsers_found[*]}${NC}"
+        echo -e "    ${YELLOW}Note:${NC} Ubuntu Snap confinement restricts access to /dev/uhid virtual tokens."
+        echo -e "    If passkey prompts do not trigger the bridge in Snap browsers, install native .deb packages"
+        echo -e "    (e.g., official Mozilla APT repo for Firefox or Google Chrome .deb). See README.md for details."
+    fi
 fi
 
 # 5. Health verification
