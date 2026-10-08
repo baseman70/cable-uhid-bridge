@@ -201,9 +201,12 @@ Currently, Snap's confinement architecture restricts access to virtual HID devic
 1. **Device Cgroups**: Snap's device cgroup controller restricts `/dev/hidraw*` devices based on physical USB bus attributes (`ATTRS{idVendor}`), which virtual `/dev/uhid` nodes do not have.
 2. **AppArmor**: Snap's `u2f-devices` AppArmor profile restricts sysfs report descriptors to `/sys/devices/**/usb*` and `/sys/devices/**/i2c*`, denying access to `/sys/devices/virtual/...`.
 
-As a result, connecting `sudo snap connect <browser>:u2f-devices` is not sufficient for `/dev/uhid` virtual tokens, and Snap browsers will prompt *"Touch your security key"* without passing CTAPHID packets to the bridge.
+As a result, connecting `sudo snap connect <browser>:u2f-devices` is not currently sufficient for `/dev/uhid` virtual tokens, and Snap browsers will prompt *"Touch your security key"* without passing CTAPHID packets to the bridge.
 
-#### Recommended Solution: Use Native Browser Packages
+> [!NOTE]
+> **Upstream Fix Pending:** An upstream fix has been submitted and approved in Canonical `snapd` ([PR #17727](https://github.com/canonical/snapd/pull/17727) / [Launchpad #2168777](https://bugs.launchpad.net/snapd/+bug/2168777)) to permit virtual HID report descriptors in the `u2f-devices` AppArmor profile. Once merged and released in an upcoming `snapd` update, connecting `sudo snap connect <browser>:u2f-devices` will be fully supported out of the box.
+
+#### Recommended Workaround: Use Native Browser Packages
 Native (non-Snap) packages talk directly to the Linux kernel without sandbox restrictions:
 
 * **Native Firefox (`.deb`)** via Mozilla's official APT repository:
