@@ -1,0 +1,23 @@
+pkgbase = cable-uhid-bridge-git
+	pkgdesc = Linux virtual USB FIDO2 token bridge for mobile passkeys via caBLE v2 (QR code)
+	pkgver = 0.1.0.r0.g0000000
+	pkgrel = 1
+	url = https://github.com/baseman70/cable-uhid-bridge
+	install = cable-uhid-bridge.install
+	arch = x86_64
+	license = MIT
+	license = Apache-2.0
+	makedepends = git
+	makedepends = cargo
+	makedepends = clang
+	makedepends = pkgconf
+	depends = dbus
+	depends = libxkbcommon
+	provides = cable-uhid-bridge
+	conflicts = cable-uhid-bridge
+	options = !debug
+	options = !lto
+	source = git+https://github.com/baseman70/cable-uhid-bridge.git
+	sha256sums = SKIP
+
+pkgname = cable-uhid-bridge-git

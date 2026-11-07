@@ -1,0 +1,17 @@
+post_install() {
+    modprobe uhid >/dev/null 2>&1 || true
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules || true
+        udevadm trigger -s misc -a name=uhid || true
+    fi
+    echo ":: Enable and start the user daemon with:"
+    echo "   systemctl --user enable --now cable-uhid-bridge.service"
+}
+
+post_upgrade() {
+    modprobe uhid >/dev/null 2>&1 || true
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules || true
+        udevadm trigger -s misc -a name=uhid || true
+    fi
+}

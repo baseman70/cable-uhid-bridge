@@ -9,14 +9,17 @@ license=('MIT' 'Apache-2.0')
 depends=('dbus' 'libxkbcommon')
 provides=('cable-uhid-bridge')
 conflicts=('cable-uhid-bridge')
+options=('!debug')
+install=cable-uhid-bridge.install
 source=("https://github.com/baseman70/cable-uhid-bridge/releases/download/v${pkgver}/cable-uhid-bridge-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('239a24582edda4bb13b6e7185424469a6d0da3bcd572d1b57d175f04506f0e49')
 
 package() {
-    cd "$srcdir"
+    cd "$srcdir/cable-uhid-bridge-v${pkgver}-x86_64-unknown-linux-gnu"
 
     install -Dm755 "cable-uhid-bridge" "$pkgdir/usr/bin/cable-uhid-bridge"
     install -Dm644 "contrib/cable-uhid-bridge.service" "$pkgdir/usr/lib/systemd/user/cable-uhid-bridge.service"
+    sed -i 's|^ExecStart=.*|ExecStart=/usr/bin/cable-uhid-bridge|' "$pkgdir/usr/lib/systemd/user/cable-uhid-bridge.service"
     install -Dm644 "contrib/70-uhid.rules" "$pkgdir/usr/lib/udev/rules.d/70-uhid.rules"
     install -Dm644 "contrib/uhid.conf" "$pkgdir/usr/lib/modules-load.d/uhid.conf"
     install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"

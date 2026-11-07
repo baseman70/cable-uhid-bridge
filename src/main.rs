@@ -24,6 +24,7 @@ async fn main() -> Result<()> {
     if args.contains(&"--ui".to_string()) {
         let mut rp = "Passkey".to_string();
         let mut url = "".to_string();
+        let mut is_registration = false;
         let mut i = 1;
         while i < args.len() {
             if args[i] == "--rp" && i + 1 < args.len() {
@@ -32,11 +33,15 @@ async fn main() -> Result<()> {
             } else if args[i] == "--url" && i + 1 < args.len() {
                 url = args[i + 1].clone();
                 i += 2;
+            } else if args[i] == "--mode" && i + 1 < args.len() {
+                is_registration = args[i + 1].eq_ignore_ascii_case("register")
+                    || args[i + 1].eq_ignore_ascii_case("make");
+                i += 2;
             } else {
                 i += 1;
             }
         }
-        return ui::run_ui(rp, url);
+        return ui::run_ui(rp, url, is_registration);
     }
 
     // Default: Daemon mode

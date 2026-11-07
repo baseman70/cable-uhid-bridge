@@ -33,7 +33,9 @@ mkdir -p "$BUILD_DIR/usr/share/doc/cable-uhid-bridge"
 
 # 3. Copy assets
 install -m 755 "$SCRIPT_DIR/target/release/cable-uhid-bridge" "$BUILD_DIR/usr/bin/cable-uhid-bridge"
-install -m 644 "$SCRIPT_DIR/contrib/cable-uhid-bridge.service" "$BUILD_DIR/usr/lib/systemd/user/cable-uhid-bridge.service"
+sed 's|^ExecStart=.*|ExecStart=/usr/bin/cable-uhid-bridge|' \
+    "$SCRIPT_DIR/contrib/cable-uhid-bridge.service" > "$BUILD_DIR/usr/lib/systemd/user/cable-uhid-bridge.service"
+chmod 644 "$BUILD_DIR/usr/lib/systemd/user/cable-uhid-bridge.service"
 install -m 644 "$SCRIPT_DIR/contrib/70-uhid.rules" "$BUILD_DIR/usr/lib/udev/rules.d/70-uhid.rules"
 install -m 644 "$SCRIPT_DIR/contrib/uhid.conf" "$BUILD_DIR/usr/lib/modules-load.d/uhid.conf"
 install -m 644 "$SCRIPT_DIR/README.md" "$BUILD_DIR/usr/share/doc/cable-uhid-bridge/README.md"

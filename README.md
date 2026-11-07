@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-2021_edition-orange.svg)](https://www.rust-lang.org)
 [![CI](https://github.com/baseman70/cable-uhid-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/baseman70/cable-uhid-bridge/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-57_passed-success.svg)]()
+[![Tests](https://img.shields.io/badge/tests-61_passed-success.svg)]()
 [![Platform](https://img.shields.io/badge/platform-linux_x86__64-blue.svg)]()
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)]()
 

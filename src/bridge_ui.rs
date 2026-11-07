@@ -114,8 +114,15 @@ impl UiCallback for BridgeUi {
     ) {
     }
 
-    fn cable_qr_code(&self, _request_type: CableRequestType, url: String) {
+    fn cable_qr_code(&self, request_type: CableRequestType, url: String) {
         info!("caBLE QR code received for {}", self.rp_id);
+        let mode = if request_type == CableRequestType::MakeCredential
+            || request_type == CableRequestType::DiscoverableMakeCredential
+        {
+            "register"
+        } else {
+            "authenticate"
+        };
 
         // Also render text QR in terminal for logs/headless debugging
         if let Ok(qr) = qrcode::QrCode::new(&url) {
@@ -157,6 +164,8 @@ impl UiCallback for BridgeUi {
                 .arg(&self.rp_id)
                 .arg("--url")
                 .arg(&url)
+                .arg("--mode")
+                .arg(mode)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null());
 

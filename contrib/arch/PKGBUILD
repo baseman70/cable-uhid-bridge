@@ -10,6 +10,8 @@ depends=('dbus' 'libxkbcommon')
 makedepends=('git' 'cargo' 'clang' 'pkgconf')
 provides=('cable-uhid-bridge')
 conflicts=('cable-uhid-bridge')
+options=('!debug' '!lto')
+install=cable-uhid-bridge.install
 source=("git+https://github.com/baseman70/cable-uhid-bridge.git")
 sha256sums=('SKIP')
 
@@ -21,12 +23,12 @@ pkgver() {
 
 build() {
     cd "$srcdir/cable-uhid-bridge"
-    cargo build --release
+    cargo build --release --locked
 }
 
 check() {
     cd "$srcdir/cable-uhid-bridge"
-    cargo test --release
+    cargo test --release --locked
 }
 
 package() {
@@ -34,6 +36,7 @@ package() {
 
     install -Dm755 "target/release/cable-uhid-bridge" "$pkgdir/usr/bin/cable-uhid-bridge"
     install -Dm644 "contrib/cable-uhid-bridge.service" "$pkgdir/usr/lib/systemd/user/cable-uhid-bridge.service"
+    sed -i 's|^ExecStart=.*|ExecStart=/usr/bin/cable-uhid-bridge|' "$pkgdir/usr/lib/systemd/user/cable-uhid-bridge.service"
     install -Dm644 "contrib/70-uhid.rules" "$pkgdir/usr/lib/udev/rules.d/70-uhid.rules"
     install -Dm644 "contrib/uhid.conf" "$pkgdir/usr/lib/modules-load.d/uhid.conf"
     install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
