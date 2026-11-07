@@ -94,10 +94,15 @@ sudo apt install ./cable-uhid-bridge_*_amd64.deb
 systemctl --user enable --now cable-uhid-bridge
 ```
 
-### 2. Arch Linux (AUR / `PKGBUILD`)
-Install from the AUR helper of your choice, or build from the provided PKGBUILD:
+### 2. Arch Linux / Omarchy (`.pkg.tar.zst` / `PKGBUILD`)
+Install the prebuilt Arch package directly with `pacman` from the [latest GitHub Release](https://github.com/baseman70/cable-uhid-bridge/releases), or build via `makepkg`:
 ```bash
-cd contrib/arch
+# Option A: Direct install via pacman
+sudo pacman -U https://github.com/baseman70/cable-uhid-bridge/releases/download/v0.1.1/cable-uhid-bridge-bin-0.1.1-1-x86_64.pkg.tar.zst
+systemctl --user enable --now cable-uhid-bridge
+
+# Option B: Build from PKGBUILD
+cd contrib/arch/cable-uhid-bridge-bin
 makepkg -si
 systemctl --user enable --now cable-uhid-bridge
 ```
