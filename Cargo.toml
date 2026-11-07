@@ -1,6 +1,6 @@
 [package]
 name = "cable-uhid-bridge"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Chris Sommers <chris.sommers@icloud.com>"]
 description = "Linux virtual USB FIDO2/WebAuthn token bridge for mobile passkeys via caBLE v2 (QR code)"
