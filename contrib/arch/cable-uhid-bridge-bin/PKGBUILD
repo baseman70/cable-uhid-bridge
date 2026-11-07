@@ -1,6 +1,6 @@
 # Maintainer: Chris Sommers <chris.sommers@icloud.com>
 pkgname=cable-uhid-bridge-bin
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Linux virtual USB FIDO2 token bridge for mobile passkeys via caBLE v2 (QR code) (precompiled binary)"
 arch=('x86_64')
@@ -12,7 +12,7 @@ conflicts=('cable-uhid-bridge')
 options=('!debug')
 install=cable-uhid-bridge.install
 source=("https://github.com/baseman70/cable-uhid-bridge/releases/download/v${pkgver}/cable-uhid-bridge-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('239a24582edda4bb13b6e7185424469a6d0da3bcd572d1b57d175f04506f0e49')
+sha256sums=('a9f8529b8f26cc6ed6d2d5f2aa1e6c749cdcfb531a3ba98d0612bb4b0d0c5030')
 
 package() {
     cd "$srcdir/cable-uhid-bridge-v${pkgver}-x86_64-unknown-linux-gnu"
