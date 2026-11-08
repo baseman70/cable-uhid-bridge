@@ -1,66 +1,54 @@
 # cable-uhid-bridge
 
-[![Rust](https://img.shields.io/badge/rust-2021_edition-orange.svg)](https://www.rust-lang.org)
-[![CI](https://github.com/baseman70/cable-uhid-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/baseman70/cable-uhid-bridge/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-61_passed-success.svg)]()
-[![Platform](https://img.shields.io/badge/platform-linux_x86__64-blue.svg)]()
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)]()
-
-A lightweight Linux background daemon providing **cross-device WebAuthn / Passkey authentication via caBLE v2 (QR code)** by emulating a virtual USB FIDO2 token over `/dev/uhid`.
+`cable-uhid-bridge` is a Linux user-space daemon that emulates a USB FIDO2 / CTAP2 security key via `/dev/uhid` and forwards WebAuthn requests to a phone (iOS or Android) over FIDO Hybrid Transport (caBLE v2).
 
 <p align="center">
-  <img src="docs/demo.gif" alt="cable-uhid-bridge live demo on WebAuthn.io" width="800">
+  <img src="docs/demo.gif" alt="cable-uhid-bridge demo on WebAuthn.io" width="760">
 </p>
 
----
+## Overview
 
-## The Problem Solved
+Linux browsers (particularly Firefox) and `libfido2` CLI tools do not implement an OS-level FIDO hybrid transport authenticator. When a site requests a passkey stored in iCloud Keychain or Google Password Manager, the client falls back to polling `/dev/hidraw*` for a physical USB security key.
 
-Firefox and Chromium on Linux lack an OS-level platform authenticator with Hybrid Transport (caBLE). When logging into websites like GitHub, Google, or AWS with a mobile passkey (stored in iCloud Keychain or Google Password Manager), Linux browsers fall back to `libfido2`, which only looks for physical USB security keys.
+`cable-uhid-bridge` registers a virtual CTAPHID device on `/dev/uhid`. When a browser or `libfido2` client sends a `authenticatorMakeCredential` or `authenticatorGetAssertion` request:
 
-`cable-uhid-bridge` bridges this gap completely without requiring browser modifications, custom browser patches, or compositor extensions:
+1. The daemon spawns a transient Wayland/X11 window displaying a `FIDO:/...` QR code.
+2. Scanning the QR code with an iPhone or Android camera broadcasts a BLE proximity advertisement.
+3. The daemon receives the BLE advertisement via BlueZ D-Bus, establishes the encrypted P-256 Noise WebSocket tunnel to the FIDO relay specified by the phone, and returns the signed CTAP2 response over `/dev/uhid`.
 
+If a physical USB security key (such as a YubiKey) is plugged in at the same time, both devices are polled concurrently by the browser. Using either one cancels the pending request on the other via `CTAP2_ERR_KEEPALIVE_CANCEL` (`0x2D`).
+
+Tested with iOS (iCloud Keychain / Face ID) and Android (Google Password Manager) on GitHub, Google Accounts, and WebAuthn.io.
+
+## Installation
+
+### Arch Linux
+
+Install the prebuilt package from the [latest release](https://github.com/baseman70/cable-uhid-bridge/releases), or build from `contrib/arch`:
+
+```bash
+# Prebuilt package
+sudo pacman -U https://github.com/baseman70/cable-uhid-bridge/releases/download/v0.1.1/cable-uhid-bridge-bin-0.1.1-1-x86_64.pkg.tar.zst
+systemctl --user enable --now cable-uhid-bridge
+
+# Or build via makepkg
+cd contrib/arch/cable-uhid-bridge-bin
+makepkg -si
+systemctl --user enable --now cable-uhid-bridge
 ```
-┌────────────────────────────────────────────────────────┐
-│  Browser / OS Client (Firefox, Chromium, Brave, PAM)   │
-└───────────────────────────┬────────────────────────────┘
-                            │ CTAPHID (Virtual USB over /dev/uhid)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  cable-uhid-bridge (/dev/uhid)                         │
-│  - Emulates a physical FIDO2 USB Security Key          │
-│  - Pops up Wayland/X11 QR modal automatically          │
-│  - Verifies Bluetooth LE physical proximity (BlueZ)    │
-│  - E2EE Noise WebSocket tunnel to Apple / Google relay │
-└───────────────────────────┬────────────────────────────┘
-                            │ caBLE v2 Tunnel (FIDO Hybrid)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│  Mobile Device (iPhone / Android)                      │
-│  - Biometric Verification (Face ID / Fingerprint / PIN)│
-│  - Returns signed WebAuthn assertion / credential      │
-└────────────────────────────────────────────────────────┘
+
+### Debian / Ubuntu
+
+Download the `.deb` package from the [latest release](https://github.com/baseman70/cable-uhid-bridge/releases):
+
+```bash
+sudo apt install ./cable-uhid-bridge_*_amd64.deb
+systemctl --user enable --now cable-uhid-bridge
 ```
 
----
+### Install Script (Arch, Debian, Ubuntu, Fedora)
 
-## 📱 Verified Compatibility
-
-| Mobile Platform | Credential Provider | Biometric Auth | Happy Path | Cancel Flow |
-|---|---|---|:---:|:---:|
-| **Apple iOS** (iPhone / iPad) | iCloud Keychain | Face ID / Touch ID | ✅ **Verified** | ✅ **Verified** |
-| **Google Android** | Google Password Manager | Fingerprint / Screen Lock | ✅ **Verified** | ✅ **Verified** |
-
-### Verified Relying Parties
-* **GitHub** (`github.com`)
-* **WebAuthn.io** (`webauthn.io`)
-* **Google Accounts**
-
----
-
-## 🚀 Quick Start (Automated Installer)
-
-An automated installer is provided for systemd-based Linux systems (Arch, Pop!_OS, Ubuntu, Debian, Fedora):
+The included `install.sh` script loads the `uhid` kernel module, installs `/etc/udev/rules.d/70-uhid.rules` (`TAG+="uaccess"` so the daemon runs unprivileged), builds the binary, and enables the systemd user service:
 
 ```bash
 git clone https://github.com/baseman70/cable-uhid-bridge.git
@@ -68,222 +56,84 @@ cd cable-uhid-bridge
 ./install.sh
 ```
 
-### What `install.sh` Does Automatically:
-1. **Prerequisite Auto-Detection & Installation**: Automatically checks for required system C libraries (`libdbus`, `libclang`, `libxkbcommon`) and the Rust toolchain, offering to install any missing dependencies automatically via your system package manager (`apt`, `pacman`, or `dnf`). For unattended setups, run with `./install.sh -y`.
-2. **Kernel Module Setup**: Detects and loads the `uhid` kernel module and configures `/etc/modules-load.d/uhid.conf` so it persists across system reboots.
-3. **Udev Permissions**: Installs `/etc/udev/rules.d/70-uhid.rules` with `TAG+="uaccess"`, enabling unprivileged desktop user access without `sudo`.
-4. **Builds Release Binary**: Compiles `cable-uhid-bridge` and installs it to `~/.local/bin/`.
-5. **Systemd User Service**: Configures, enables, and immediately starts `cable-uhid-bridge.service` under `systemctl --user`.
-6. **Self-Verification**: Confirms the virtual token is registered and active in the Linux kernel.
+To remove the service, binary, and udev rule:
 
-### Uninstall Anytime
 ```bash
 ./install.sh --uninstall
 ```
 
----
+### Manual Build from Source
 
-## 📦 Packages & Precompiled Binaries
+Dependencies: Rust toolchain (`cargo`), `pkg-config`, `dbus`, `clang`, and `libxkbcommon`.
 
-If you prefer installing prebuilt packages without compiling from source:
-
-### 1. Debian / Ubuntu / Pop!_OS (`.deb`)
-Download the `.deb` package from the [latest GitHub Release](https://github.com/baseman70/cable-uhid-bridge/releases):
 ```bash
-sudo apt install ./cable-uhid-bridge_*_amd64.deb
-systemctl --user enable --now cable-uhid-bridge
-```
-
-### 2. Arch Linux / Omarchy (`.pkg.tar.zst` / `PKGBUILD`)
-Install the prebuilt Arch package directly with `pacman` from the [latest GitHub Release](https://github.com/baseman70/cable-uhid-bridge/releases), or build via `makepkg`:
-```bash
-# Option A: Direct install via pacman
-sudo pacman -U https://github.com/baseman70/cable-uhid-bridge/releases/download/v0.1.1/cable-uhid-bridge-bin-0.1.1-1-x86_64.pkg.tar.zst
-systemctl --user enable --now cable-uhid-bridge
-
-# Option B: Build from PKGBUILD
-cd contrib/arch/cable-uhid-bridge-bin
-makepkg -si
-systemctl --user enable --now cable-uhid-bridge
-```
-
-### 3. Precompiled Release Tarball
-```bash
-tar -xzf cable-uhid-bridge-v*-x86_64-unknown-linux-gnu.tar.gz
-cd cable-uhid-bridge-*
-./install.sh
-```
-
----
-
-## 🛠️ Manual Installation & Build from Source
-
-If you prefer to install dependencies and configure the service manually:
-
-### 1. Install Build Dependencies
-* **Debian / Ubuntu / Pop!_OS / Linux Mint**:
-  ```bash
-  sudo apt update && sudo apt install -y build-essential pkg-config libdbus-1-dev libclang-dev libxkbcommon-dev curl
-  ```
-* **Arch Linux / Manjaro / EndeavourOS**:
-  ```bash
-  sudo pacman -S --needed base-devel pkgconf dbus clang libxkbcommon curl
-  ```
-* **Fedora / RHEL**:
-  ```bash
-  sudo dnf install -y gcc pkgconf-pkg-config dbus-devel clang-devel libxkbcommon-devel curl
-  ```
-* **Rust Toolchain**:
-  ```bash
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
-
-### 2. Configure Kernel Module & Udev Rule (One-Time)
-```bash
+# 1. Load uhid and grant uaccess permissions to the active seat user
 sudo modprobe uhid
 echo "uhid" | sudo tee /etc/modules-load.d/uhid.conf
 echo 'KERNEL=="uhid", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-uhid.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger -s misc -a name=uhid
-```
 
-### 3. Build & Install Binary
-```bash
+# 2. Build and install binary
 cargo build --release
-mkdir -p ~/.local/bin
-install -m 755 target/release/cable-uhid-bridge ~/.local/bin/
-```
+install -Dm755 target/release/cable-uhid-bridge ~/.local/bin/cable-uhid-bridge
 
-### 4. Enable Systemd User Service
-```bash
+# 3. Enable systemd user service
 mkdir -p ~/.config/systemd/user
 cp contrib/cable-uhid-bridge.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now cable-uhid-bridge.service
 ```
 
-### 5. Monitor Service
-```bash
-systemctl --user status cable-uhid-bridge
-journalctl --user -u cable-uhid-bridge -f
-```
+## Verification and Debugging
 
----
+Check that `libfido2` sees the virtual device:
 
-## How to Test
-
-### 1. Verify Virtual USB Detection
-Verify that `libfido2` detects your virtual security key:
 ```bash
 fido2-token -L
-```
-Output will display:
-```
-/dev/hidrawX: vendor=0x1209, product=0x0001 (caBLE Virtual Passkey Token)
+# /dev/hidrawX: vendor=0x1209, product=0x0001 (caBLE Virtual Passkey Token)
 ```
 
-### 2. Test in Firefox or Chrome
-1. Navigate to **[webauthn.io](https://webauthn.io)**.
-2. Enter a test username (e.g. `test-user-1`).
-3. Click **"Register"** or **"Authenticate"**.
-4. The floating modal UI will pop up with the caBLE QR code.
-5. Point your iPhone or Android camera at the QR code and approve with Face ID or Fingerprint.
-6. The modal displays `"Done!"` and dismisses, completing login.
+Preview the QR window directly without triggering a WebAuthn request:
 
-### 3. Standalone UI Preview
-Preview the Wayland modal UI without initiating WebAuthn:
 ```bash
-cargo run -- --ui --rp "github.com" --url "fido:/01234567890123456789"
+cable-uhid-bridge --ui --rp "github.com" --url "FIDO:/01234567890123456789"
 ```
 
----
+Run the daemon in the foreground with debug logging:
 
-## Troubleshooting & FAQ
-
-### Ubuntu Snap Browsers (Firefox & Chromium Confinement Limitation)
-On Ubuntu, default installations of Firefox and Chromium are packaged as sandboxed **Snaps**. 
-
-Currently, Snap's confinement architecture restricts access to virtual HID devices created via `/dev/uhid`:
-1. **Device Cgroups**: Snap's device cgroup controller restricts `/dev/hidraw*` devices based on physical USB bus attributes (`ATTRS{idVendor}`), which virtual `/dev/uhid` nodes do not have.
-2. **AppArmor**: Snap's `u2f-devices` AppArmor profile restricts sysfs report descriptors to `/sys/devices/**/usb*` and `/sys/devices/**/i2c*`, denying access to `/sys/devices/virtual/...`.
-
-As a result, connecting `sudo snap connect <browser>:u2f-devices` is not currently sufficient for `/dev/uhid` virtual tokens, and Snap browsers will prompt *"Touch your security key"* without passing CTAPHID packets to the bridge.
-
-> [!NOTE]
-> **Upstream Fix Pending:** An upstream fix has been submitted and approved in Canonical `snapd` ([PR #17727](https://github.com/canonical/snapd/pull/17727) / [Launchpad #2168777](https://bugs.launchpad.net/snapd/+bug/2168777)) to permit virtual HID report descriptors in the `u2f-devices` AppArmor profile. Once merged and released in an upcoming `snapd` update, connecting `sudo snap connect <browser>:u2f-devices` will be fully supported out of the box.
-
-#### Recommended Workaround: Use Native Browser Packages
-Native (non-Snap) packages talk directly to the Linux kernel without sandbox restrictions:
-
-* **Native Firefox (`.deb`)** via Mozilla's official APT repository:
-  ```bash
-  sudo install -d -m 0755 /etc/apt/keyrings
-  wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
-  echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | sudo tee -a /etc/apt/sources.list.d/mozilla.list > /dev/null
-  echo -e 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000' | sudo tee /etc/apt/preferences.d/mozilla
-  sudo apt-get update && sudo apt-get install firefox
-  ```
-
-* **Google Chrome (`.deb`)**:
-  ```bash
-  wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-  sudo dpkg -i google-chrome-stable_current_amd64.deb
-  ```
-
-* **Brave / Edge**: Use the official native `.deb` repositories.
-* **Arch Linux / Fedora**: Standard native packages (`pacman`, `dnf`) work out of the box.
-
-### Coexistence with Physical USB Security Keys
-If you have a physical YubiKey or Titan Key plugged in simultaneously:
-* Both devices coexist seamlessly. The browser queries all connected security keys.
-* **Touching your physical key** fulfills the login instantly and dismisses the bridge.
-* **Scanning the QR code on your phone** fulfills the login via passkey and dismisses the physical key prompt.
-* Neither device conflicts with or locks the other.
-
-### Tiling Window Managers (Hyprland, Sway, i3)
-Dynamic tiling compositors automatically tile new windows into the active workspace by default. To ensure the authentication modal opens as a centered floating dialog rather than a tiled pane:
-
-* **Hyprland** (in `~/.config/hypr/hyprland.conf` or Lua config):
-  ```ini
-  windowrulev2 = float, class:^(cable-uhid-bridge)$
-  windowrulev2 = center, class:^(cable-uhid-bridge)$
-  ```
-  *(In Omarchy: `o.window("cable-uhid-bridge", { tag = "+floating-window" })`)*
-
-* **Sway / i3** (in `~/.config/sway/config` or `~/.config/i3/config`):
-  ```ini
-  for_window [app_id="cable-uhid-bridge"] floating enable, move position center
-  ```
-
-### Running in Foreground Debug Mode
-To inspect incoming packets or troubleshoot WebAuthn interactions directly:
 ```bash
 systemctl --user stop cable-uhid-bridge
-RUST_LOG=trace cable-uhid-bridge
+RUST_LOG=debug cable-uhid-bridge
 ```
 
+## Window Manager Configuration
 
----
+The QR prompt sets `app_id="cable-uhid-bridge"` (Wayland) and `WM_CLASS="cable-uhid-bridge"` (X11) with a fixed `340x410` window size. On tiling compositors, add a float rule if it is not floated automatically:
 
-## Architecture & Security Hardening
+Hyprland (`hyprland.conf`):
+```ini
+windowrulev2 = float, class:^(cable-uhid-bridge)$
+windowrulev2 = center, class:^(cable-uhid-bridge)$
+```
 
-* **Embedded Native Wayland Modal (`egui` / `eframe`)**:
-  * Dark-mode floating modal showing the Relying Party badge.
-  * High-contrast QR rendering with white padding for rapid camera recognition.
-  * Live status transitions (*"Connecting to relay..."* → *"Phone detected!"* → *"Done!"*).
-  * Interactive **Cancel** button with spec-compliant `0x2D` (`CTAP2_ERR_KEEPALIVE_CANCEL`) abort signaling.
-* **Process & Memory Isolation**:
-  * The GUI modal runs as a transient child subprocess. When idle, the daemon consumes zero GPU memory and under 5MB RAM.
-  * Spawning isolates display/GPU crashes from the core `/dev/uhid` kernel device loop.
-* **Security & Protocol Hardening**:
-  * **Challenge-Keyed Assertion Cache**: Caches two-stage assertions keyed to `clientDataHash`, consumed via single-use `.take()`.
-  * **Transport Hint Sanitization**: Strips `transports: ["usb"]` from credential descriptors so mobile authenticators match hybrid credentials by ID.
-  * **Spec-Compliant Keepalives**: Periodic 100ms `CTAPHID_KEEPALIVE` packets prevent host-side client timeouts.
-  * **Least Privilege**: Runs unprivileged via systemd user sessions using udev `uaccess` ACLs.
+Omarchy (`~/.config/hypr/`):
+```lua
+o.window("cable-uhid-bridge", { tag = "+floating-window" })
+```
 
----
+Sway / i3:
+```ini
+for_window [app_id="cable-uhid-bridge"] floating enable, move position center
+```
+
+On Omarchy systems, the UI reads `~/.local/state/omarchy/current/theme/colors.toml` to match the active desktop color palette, falling back to a dark palette if not present. Colors can also be overridden with `CABLE_THEME_FILE`, `CABLE_THEME_BG`, `CABLE_THEME_FG`, and `CABLE_THEME_ACCENT`.
+
+## Notes on Ubuntu Snap Browsers
+
+Default Firefox and Chromium packages on Ubuntu run inside Snap confinement. Snap's `u2f-devices` interface currently restricts AppArmor report descriptor paths to physical `/sys/devices/**/usb*` and `/sys/devices/**/i2c*` buses, which blocks access to `/sys/devices/virtual/misc/uhid/...` devices.
+
+An upstream patch ([canonical/snapd#17727](https://github.com/canonical/snapd/pull/17727) / [LP #2168777](https://bugs.launchpad.net/snapd/+bug/2168777)) has been approved to permit virtual UHID report descriptors in `u2f-devices`. Until that change lands in a stable `snapd` release, use native `.deb` browser packages on Ubuntu.
 
 ## License
 
-Dual-licensed under either:
-* **MIT License** ([LICENSE-MIT](LICENSE-MIT))
-* **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
