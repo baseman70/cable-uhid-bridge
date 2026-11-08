@@ -134,6 +134,12 @@ Default Firefox and Chromium packages on Ubuntu run inside Snap confinement. Sna
 
 An upstream patch ([canonical/snapd#17727](https://github.com/canonical/snapd/pull/17727) / [LP #2168777](https://bugs.launchpad.net/snapd/+bug/2168777)) has been approved to permit virtual UHID report descriptors in `u2f-devices`. Until that change lands in a stable `snapd` release, use native `.deb` browser packages on Ubuntu.
 
+## Development and AI Disclosure
+
+AI tooling (Google Gemini) was used to assist with code generation, refactoring, and documentation during the development of this project.
+
+All protocol logic, `/dev/uhid` kernel device handling, BlueZ D-Bus integration, and security boundaries are reviewed, understood, and maintained by the author (30 years of systems and software engineering experience). Every supported workflow has been manually tested end-to-end on physical Linux hardware (Arch Linux / Hyprland and Ubuntu / Debian) against physical iOS (iCloud Keychain / Face ID) and Android (Google Password Manager) devices, alongside unit test coverage for CTAPHID framing, CBOR parsing, and state transitions.
+
 ## License
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
