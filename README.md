@@ -18,6 +18,12 @@ Linux browsers (particularly Firefox) and `libfido2` CLI tools do not implement 
 
 If a physical USB security key (such as a YubiKey) is plugged in at the same time, both devices are polled concurrently by the browser. Using either one cancels the pending request on the other via `CTAP2_ERR_KEEPALIVE_CANCEL` (`0x2D`).
 
+### Accounts with several security keys
+
+When an account has several registered keys (for example two YubiKeys and a phone passkey), the browser first probes the token silently with the full `allowList` and then asks only for the first credential. The bridge cannot know which credentials live on the phone, so it remembers the probed list and forwards all of them to the phone, which signs with the one it holds.
+
+Some sites name a single credential that the phone does not hold. Setting `CABLE_DROP_ALLOW_LIST=1` in the daemon's environment forwards sign-in requests without the `allowList`, so the phone offers whichever discoverable passkey it has for the site. The site still has to accept that passkey for the signed-in account.
+
 Tested with iOS (iCloud Keychain / Face ID) and Android (Google Password Manager) on GitHub, Google Accounts, and WebAuthn.io.
 
 ## Installation

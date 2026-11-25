@@ -146,6 +146,45 @@ pub fn extract_first_allow_list_credential(raw_cbor: &[u8]) -> Option<(Value, Ve
     None
 }
 
+/// Rewrites the allowList (key 3) of a raw GetAssertion CBOR request so that it contains
+/// exactly `credential_ids`, leaving every other field untouched.
+/// An empty `credential_ids` removes the allowList, turning the request into a
+/// discoverable-credential request.
+///
+/// Returns `None` if the request cannot be parsed or re-serialized, in which case the
+/// caller should fall back to the original request.
+pub fn replace_allow_list(raw_cbor: &[u8], credential_ids: &[Vec<u8>]) -> Option<Vec<u8>> {
+    if raw_cbor.len() <= 1 {
+        return None;
+    }
+
+    let Ok(Value::Map(mut entries)) = ciborium::from_reader(&raw_cbor[1..]) else {
+        return None;
+    };
+
+    let descriptors: Vec<Value> = credential_ids
+        .iter()
+        .map(|id| {
+            let mut desc = vec![
+                (Value::Text("id".into()), Value::Bytes(id.clone())),
+                (Value::Text("type".into()), Value::Text("public-key".into())),
+            ];
+            sort_cbor_map(&mut desc);
+            Value::Map(desc)
+        })
+        .collect();
+
+    entries.retain(|(k, _)| !matches!(k, Value::Integer(int) if *int == 3.into()));
+    if !descriptors.is_empty() {
+        entries.push((Value::Integer(3.into()), Value::Array(descriptors)));
+    }
+    sort_cbor_map(&mut entries);
+
+    let mut out = vec![raw_cbor[0]];
+    ciborium::ser::into_writer(&Value::Map(entries), &mut out).ok()?;
+    Some(out)
+}
+
 /// Extracts the credential ID from a CTAP2 GetAssertion response (CBOR map key 1: credential -> "id").
 pub fn extract_assertion_credential_id(raw_cbor: &[u8]) -> Option<Vec<u8>> {
     let cbor_slice = if !raw_cbor.is_empty() && raw_cbor[0] == CTAP2_OK {
@@ -175,6 +214,39 @@ pub fn extract_assertion_credential_id(raw_cbor: &[u8]) -> Option<Vec<u8>> {
         }
     }
     None
+}
+
+/// Extracts the user handle from a CTAP2 GetAssertion response (CBOR map key 4: user -> "id").
+/// Present only for discoverable credentials.
+pub fn extract_assertion_user_handle(raw_cbor: &[u8]) -> Option<Vec<u8>> {
+    let Ok(Value::Map(entries)) = ciborium::from_reader(raw_cbor) else {
+        return None;
+    };
+    entries.into_iter().find_map(|(k, v)| match (k, v) {
+        (Value::Integer(int), Value::Map(user)) if int == 4.into() => {
+            user.into_iter().find_map(|(uk, uv)| match (uk, uv) {
+                (Value::Text(key), Value::Bytes(id)) if key == "id" => Some(id),
+                _ => None,
+            })
+        }
+        _ => None,
+    })
+}
+
+/// Extracts the authenticator data flags byte from a CTAP2 MakeCredential or GetAssertion
+/// response (CBOR map key 2: authData, byte 32).
+///
+/// Bits: 0x01 UP, 0x04 UV, 0x08 BE (backup eligible), 0x10 BS (backed up), 0x40 AT.
+pub fn extract_auth_data_flags(raw_cbor: &[u8]) -> Option<u8> {
+    let Ok(Value::Map(entries)) = ciborium::from_reader(raw_cbor) else {
+        return None;
+    };
+    entries.into_iter().find_map(|(k, v)| match (k, v) {
+        (Value::Integer(int), Value::Bytes(auth_data)) if int == 2.into() => {
+            auth_data.get(32).copied()
+        }
+        _ => None,
+    })
 }
 
 /// Builds a silent GetAssertion pre-flight response for matching allowList credentials.
