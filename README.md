@@ -18,6 +18,22 @@ Linux browsers (particularly Firefox) and `libfido2` CLI tools do not implement 
 
 If a physical USB security key (such as a YubiKey) is plugged in at the same time, both devices are polled concurrently by the browser. Using either one cancels the pending request on the other via `CTAP2_ERR_KEEPALIVE_CANCEL` (`0x2D`).
 
+### Accounts with several security keys
+
+When an account has several registered keys (for example two YubiKeys and a phone passkey), the browser first probes the token silently with the full `allowList` and then asks only for the first credential. The bridge cannot know which credentials live on the phone, so it remembers the probed list and forwards all of them to the phone, which signs with the one it holds.
+
+Some sites name a single credential that the phone does not hold. Setting `CABLE_DROP_ALLOW_LIST=1` in the daemon's environment forwards sign-in requests without the `allowList`, so the phone offers whichever discoverable passkey it has for the site. The site still has to accept that passkey for the signed-in account.
+
+To set it for the systemd user service:
+
+```bash
+systemctl --user edit cable-uhid-bridge
+# add:
+#   [Service]
+#   Environment=CABLE_DROP_ALLOW_LIST=1
+systemctl --user restart cable-uhid-bridge
+```
+
 Tested with iOS (iCloud Keychain / Face ID) and Android (Google Password Manager) on GitHub, Google Accounts, and WebAuthn.io.
 
 ## Installation
@@ -106,6 +122,10 @@ systemctl --user stop cable-uhid-bridge
 RUST_LOG=debug cable-uhid-bridge
 ```
 
+At debug level the daemon logs each `GetAssertion` request with its `allowList`, whether the list was expanded from a silent probe, the reason a phone transaction failed, the authenticator data flags (user verification, backup-eligible, backed-up), and the user handle returned by the phone. This is usually enough to tell whether a failed sign-in is caused by the site not offering the phone's credential, the phone not holding it, or the site rejecting the answer.
+
+These logs contain credential IDs and account identifiers. Redact them before sharing.
+
 ## Window Manager Configuration
 
 The QR prompt sets `app_id="cable-uhid-bridge"` (Wayland) and `WM_CLASS="cable-uhid-bridge"` (X11) with a fixed `340x410` window size. On tiling compositors, add a float rule if it is not floated automatically:
@@ -137,6 +157,8 @@ An upstream patch ([canonical/snapd#17727](https://github.com/canonical/snapd/pu
 ## Development and AI Disclosure
 
 AI tooling (Google Gemini) was used to assist with code generation, refactoring, and documentation during the development of this project.
+
+Support for accounts with several registered keys (allowList expansion, graceful caBLE tunnel shutdown, and `CABLE_DROP_ALLOW_LIST`) was implemented using Claude Fable (Anthropic, via Claude Code) and tested end-to-end with Firefox and an Android phone (Google Password Manager).
 
 All protocol logic, `/dev/uhid` kernel device handling, BlueZ D-Bus integration, and security boundaries are reviewed, understood, and maintained by the author (30 years of systems and software engineering experience). Every supported workflow has been manually tested end-to-end on physical Linux hardware (Arch Linux / Hyprland and Ubuntu / Debian) against physical iOS (iCloud Keychain / Face ID) and Android (Google Password Manager) devices, alongside unit test coverage for CTAPHID framing, CBOR parsing, and state transitions.
 

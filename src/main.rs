@@ -9,7 +9,9 @@ use anyhow::Result;
 use ctaphid_types::{Channel, Command};
 use tracing::{debug, error, info};
 use tracing_subscriber::{filter::LevelFilter, EnvFilter};
-use webauthn_authenticator_rs::{cable::connect_cable_tunnel, types::CableRequestType};
+use webauthn_authenticator_rs::{
+    cable::connect_cable_tunnel, transport::Token, types::CableRequestType,
+};
 
 use bridge_ui::BridgeUi;
 use ctap2::*;
@@ -76,6 +78,10 @@ async fn main() -> Result<()> {
     println!("   Awaiting WebAuthn requests...\n");
 
     let mut engine = BridgeEngine::new();
+    if std::env::var_os("CABLE_DROP_ALLOW_LIST").is_some() {
+        engine.drop_allow_list = true;
+        println!("ℹ️  CABLE_DROP_ALLOW_LIST set: sign-in requests are sent to the phone without an allowList.\n");
+    }
 
     loop {
         match token.read_event() {
@@ -184,8 +190,12 @@ async fn handle_cable_transaction(
 
     let cable_task = tokio::spawn(async move {
         let mut tunnel = connect_cable_tunnel(req_type, &ui_clone).await?;
-        let resp = tunnel.transmit_cbor(&data_vec, &ui_clone).await?;
-        Ok::<Vec<u8>, anyhow::Error>(resp)
+        let resp = tunnel.transmit_cbor(&data_vec, &ui_clone).await;
+        // Hang up properly: send the caBLE Shutdown frame and close the WebSocket so the
+        // phone sees the session end instead of a dropped connection. Bounded so a stalled
+        // relay cannot hold back the response to the browser.
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2), tunnel.close()).await;
+        Ok::<Vec<u8>, anyhow::Error>(resp?)
     });
 
     let mut last_keepalive = std::time::Instant::now();
@@ -259,6 +269,16 @@ async fn handle_cable_transaction(
         match action {
             EngineCborAction::SendResponse(resp) => {
                 bridge_ui.notify_done();
+                if let Some(flags) = extract_auth_data_flags(&resp) {
+                    debug!(
+                        "Response authData flags 0x{:02x}: UP={} UV={} backup-eligible={} backed-up={}",
+                        flags,
+                        flags & 0x01 != 0,
+                        flags & 0x04 != 0,
+                        flags & 0x08 != 0,
+                        flags & 0x10 != 0
+                    );
+                }
                 if is_make_cred {
                     info!(
                         "Received created credential ({} bytes) from phone!",
@@ -278,6 +298,16 @@ async fn handle_cable_transaction(
                     let cred_id_hex = extract_assertion_credential_id(&resp)
                         .map(|id| hex::encode(&id))
                         .unwrap_or_else(|| "unspecified (discoverable passkey)".to_string());
+                    if let Some(handle) = extract_assertion_user_handle(&resp) {
+                        debug!(
+                            "Assertion user handle ({} bytes): {}",
+                            handle.len(),
+                            String::from_utf8(handle.clone())
+                                .unwrap_or_else(|_| hex::encode(&handle))
+                        );
+                    } else {
+                        debug!("Assertion carries no user handle");
+                    }
                     println!("\n✅ Successfully authenticated with phone passkey!");
                     println!("   Authenticated Credential ID: {}", cred_id_hex);
                     println!("   Relying Party: {}\n", rp_id);

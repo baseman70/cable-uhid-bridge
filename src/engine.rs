@@ -57,6 +57,35 @@ impl CachedAssertion {
     }
 }
 
+/// The full allowList seen in a silent (up=false) pre-flight probe.
+///
+/// Browsers send the complete allowList in the silent probe, then narrow the
+/// interactive GetAssertion down to whichever credential the authenticator
+/// claimed to hold. The bridge cannot know which credentials live on the phone,
+/// so it claims the first one. Remembering the full list lets the interactive
+/// request be forwarded to the phone with every candidate, so the phone can use
+/// whichever credential it actually holds (e.g. the second of two registered keys).
+#[derive(Debug, Clone)]
+pub struct ProbedAllowList {
+    pub rp_id: String,
+    pub credential_ids: Vec<Vec<u8>>,
+    pub created_at: Instant,
+}
+
+impl ProbedAllowList {
+    /// Checks whether an interactive request is the narrowed-down follow-up of this probe:
+    /// same relying party, still fresh, and every requested credential was in the probe.
+    pub fn covers(&self, req: &AssertionRequest, max_age: Duration) -> bool {
+        self.created_at.elapsed() <= max_age
+            && self.rp_id == req.rp_id
+            && !req.allow_list.is_empty()
+            && req
+                .allow_list
+                .iter()
+                .all(|id| self.credential_ids.contains(id))
+    }
+}
+
 /// Action to be taken by the transport layer in response to a CBOR command.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EngineCborAction {
@@ -91,6 +120,13 @@ pub struct BridgeEngine {
     pub assertion_cache: Option<CachedAssertion>,
     pub cache_ttl: Duration,
     pub pending_client_data_hash: Vec<u8>,
+    pub probed_allow_list: Option<ProbedAllowList>,
+    pub probe_ttl: Duration,
+    /// Forward interactive GetAssertion requests to the phone without their allowList, so
+    /// the phone offers whichever discoverable passkey it holds for the relying party.
+    /// For relying parties that name a single credential the phone does not hold even
+    /// though another of the user's registered credentials lives on the phone.
+    pub drop_allow_list: bool,
 }
 
 impl Default for BridgeEngine {
@@ -107,6 +143,9 @@ impl BridgeEngine {
             assertion_cache: None,
             cache_ttl: Duration::from_secs(10),
             pending_client_data_hash: Vec::new(),
+            probed_allow_list: None,
+            probe_ttl: Duration::from_secs(30),
+            drop_allow_list: false,
         }
     }
 
@@ -140,6 +179,7 @@ impl BridgeEngine {
 
         match ctap_cmd {
             CTAP_CMD_GET_INFO => {
+                tracing::debug!("GetInfo request");
                 let get_info_cbor = build_get_info_response();
                 EngineCborAction::SendResponse(get_info_cbor)
             }
@@ -154,6 +194,19 @@ impl BridgeEngine {
 
                 let assertion_req = parse_assertion_request(data);
                 self.pending_client_data_hash = assertion_req.client_data_hash.clone();
+                tracing::debug!(
+                    "GetAssertion request: rp='{}' up={} uv={} allowList({})=[{}]",
+                    assertion_req.rp_id,
+                    assertion_req.user_presence,
+                    assertion_req.user_verification,
+                    assertion_req.allow_list_len,
+                    assertion_req
+                        .allow_list
+                        .iter()
+                        .map(hex::encode)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
 
                 // Handle silent/pre-flight assertion checks (options: { "up": false })
                 if !assertion_req.user_presence {
@@ -161,7 +214,16 @@ impl BridgeEngine {
                         // Registration pre-flight: check for resident credentials to exclude.
                         return EngineCborAction::SendStatus(CTAP2_ERR_NO_CREDENTIALS);
                     } else {
-                        // Silent probe with allowList: resolve silently with synthetic assertion
+                        // Silent probe with allowList: remember the full list so the
+                        // interactive follow-up can offer every candidate to the phone,
+                        // then resolve silently with a synthetic assertion.
+                        if !assertion_req.allow_list.is_empty() {
+                            self.probed_allow_list = Some(ProbedAllowList {
+                                rp_id: assertion_req.rp_id.clone(),
+                                credential_ids: assertion_req.allow_list.clone(),
+                                created_at: Instant::now(),
+                            });
+                        }
                         if let Some((cred_descriptor, _cred_id)) =
                             extract_first_allow_list_credential(data)
                         {
@@ -186,7 +248,36 @@ impl BridgeEngine {
                     }
                 }
 
-                let (cable_payload, _summary) = prepare_get_assertion_for_cable(data);
+                // If the browser narrowed the allowList after a silent probe, restore the
+                // full probed list for the phone. The probe is single-use.
+                let mut expanded = None;
+                if let Some(probe) = self.probed_allow_list.take() {
+                    if probe.covers(&assertion_req, self.probe_ttl) {
+                        if probe.credential_ids.len() > assertion_req.allow_list.len() {
+                            tracing::info!(
+                                "Expanding allowList for '{}' from {} to {} credential(s) seen in silent probe",
+                                assertion_req.rp_id,
+                                assertion_req.allow_list.len(),
+                                probe.credential_ids.len()
+                            );
+                            expanded = replace_allow_list(data, &probe.credential_ids);
+                        }
+                    } else {
+                        self.probed_allow_list = Some(probe);
+                    }
+                }
+
+                if self.drop_allow_list && !assertion_req.allow_list.is_empty() {
+                    tracing::info!(
+                        "Dropping allowList ({} credential(s)) for '{}': phone will offer its own passkey",
+                        assertion_req.allow_list.len(),
+                        assertion_req.rp_id
+                    );
+                    expanded = replace_allow_list(data, &[]);
+                }
+
+                let (cable_payload, _summary) =
+                    prepare_get_assertion_for_cable(expanded.as_deref().unwrap_or(data));
                 EngineCborAction::StartCableTransaction {
                     req_type: CableRequestType::GetAssertion,
                     rp_id: assertion_req.rp_id,
@@ -200,7 +291,8 @@ impl BridgeEngine {
                     return EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL);
                 }
 
-                let (cable_payload, _summary) = prepare_make_credential_for_cable(data);
+                let (cable_payload, summary) = prepare_make_credential_for_cable(data);
+                tracing::debug!("MakeCredential request: {}", summary);
                 let rp_id = extract_make_credential_rp_id(&cable_payload);
 
                 // Intercept and reject browser dummy touch / selection probes
@@ -258,7 +350,8 @@ impl BridgeEngine {
                 // Channel was re-initialized by host; no status sent on the old channel
                 None
             }
-            TransactionResult::Failed(_err) => {
+            TransactionResult::Failed(err) => {
+                tracing::info!("caBLE transaction for '{}' failed: {}", rp_id, err);
                 self.record_cancellation();
                 Some(EngineCborAction::SendStatus(CTAP2_ERR_KEEPALIVE_CANCEL))
             }
@@ -524,6 +617,106 @@ mod tests {
         } else {
             panic!("Expected SendResponse for silent probe, got {:?}", action);
         }
+    }
+
+    fn started_allow_list(action: EngineCborAction) -> Vec<Vec<u8>> {
+        match action {
+            EngineCborAction::StartCableTransaction { cable_payload, .. } => {
+                parse_assertion_request(&cable_payload).allow_list
+            }
+            other => panic!("Expected StartCableTransaction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_narrowed_assertion_is_expanded_to_probed_allow_list() {
+        let mut engine = BridgeEngine::new();
+        let (old_key, phone_key) = (vec![1u8; 64], vec![2u8; 32]);
+
+        // Silent probe carries both registered credentials; bridge claims the first.
+        let probe = make_test_get_assertion_cbor(
+            "auth.cern.ch",
+            false,
+            vec![old_key.clone(), phone_key.clone()],
+        );
+        assert!(matches!(
+            engine.handle_cbor_request(&probe),
+            EngineCborAction::SendResponse(_)
+        ));
+
+        // Browser follows up with only the first credential; phone must see both.
+        let real = make_test_get_assertion_cbor("auth.cern.ch", true, vec![old_key.clone()]);
+        let forwarded = started_allow_list(engine.handle_cbor_request(&real));
+        assert_eq!(forwarded, vec![old_key.clone(), phone_key]);
+
+        // The probe is single-use: a later identical request is forwarded unchanged.
+        let forwarded = started_allow_list(engine.handle_cbor_request(&real));
+        assert_eq!(forwarded, vec![old_key]);
+    }
+
+    #[test]
+    fn test_assertion_not_expanded_for_other_rp_unknown_credential_or_stale_probe() {
+        let (a, b, c) = (vec![1u8; 16], vec![2u8; 16], vec![3u8; 16]);
+        let probe = make_test_get_assertion_cbor("example.com", false, vec![a.clone(), b.clone()]);
+
+        // Different relying party
+        let mut engine = BridgeEngine::new();
+        engine.handle_cbor_request(&probe);
+        let real = make_test_get_assertion_cbor("other.com", true, vec![a.clone()]);
+        assert_eq!(
+            started_allow_list(engine.handle_cbor_request(&real)),
+            vec![a.clone()]
+        );
+
+        // Credential that was not part of the probe
+        let mut engine = BridgeEngine::new();
+        engine.handle_cbor_request(&probe);
+        let real = make_test_get_assertion_cbor("example.com", true, vec![c.clone()]);
+        assert_eq!(
+            started_allow_list(engine.handle_cbor_request(&real)),
+            vec![c]
+        );
+
+        // Expired probe
+        let mut engine = BridgeEngine::new();
+        engine.probe_ttl = Duration::from_millis(0);
+        engine.handle_cbor_request(&probe);
+        std::thread::sleep(Duration::from_millis(5));
+        let real = make_test_get_assertion_cbor("example.com", true, vec![a.clone()]);
+        assert_eq!(
+            started_allow_list(engine.handle_cbor_request(&real)),
+            vec![a]
+        );
+    }
+
+    #[test]
+    fn test_drop_allow_list_forwards_discoverable_request() {
+        let mut engine = BridgeEngine::new();
+        engine.drop_allow_list = true;
+        let real = make_test_get_assertion_cbor("auth.cern.ch", true, vec![vec![1u8; 64]]);
+        match engine.handle_cbor_request(&real) {
+            EngineCborAction::StartCableTransaction {
+                cable_payload,
+                rp_id,
+                ..
+            } => {
+                let forwarded = parse_assertion_request(&cable_payload);
+                assert_eq!(rp_id, "auth.cern.ch");
+                assert_eq!(forwarded.allow_list_len, 0);
+                assert_eq!(forwarded.client_data_hash, vec![0xAA; 32]);
+            }
+            other => panic!("Expected StartCableTransaction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_discoverable_assertion_stays_discoverable_after_probe() {
+        let mut engine = BridgeEngine::new();
+        let probe = make_test_get_assertion_cbor("example.com", false, vec![vec![1u8; 16]]);
+        engine.handle_cbor_request(&probe);
+
+        let real = make_test_get_assertion_cbor("example.com", true, vec![]);
+        assert!(started_allow_list(engine.handle_cbor_request(&real)).is_empty());
     }
 
     #[test]
